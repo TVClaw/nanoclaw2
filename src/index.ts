@@ -315,7 +315,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               const bridge = getTvBridge();
               const url = bridge.addVibePage(html);
               bridge.sendToAll('OPEN_URL', { url });
-              logger.info({ group: group.name }, 'Vibe page opened on TV');
             } catch (err) {
               logger.error(
                 { err, group: group.name },

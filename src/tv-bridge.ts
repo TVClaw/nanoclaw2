@@ -15,6 +15,7 @@ import { Bonjour, type Service } from 'bonjour-service';
 import WebSocket from 'ws';
 import { DATA_DIR, VERBOSE } from './config.js';
 import { logger } from './logger.js';
+import { shouldWrapVibePage, wrapVibePageHtml } from './vibe-page-shell.js';
 
 const VIBE_TTL_MS = 24 * 60 * 60 * 1000;
 const GAMES_DIR = path.join(process.cwd(), 'games');
@@ -179,7 +180,8 @@ export class TvBridge {
     mkdirSync(this.vibeDir, { recursive: true });
     const id = randomUUID();
     const filePath = path.join(this.vibeDir, `${id}.html`);
-    writeFileSync(filePath, html, 'utf8');
+    const body = shouldWrapVibePage(html) ? wrapVibePageHtml(html) : html;
+    writeFileSync(filePath, body, 'utf8');
     setTimeout(() => {
       try {
         unlinkSync(filePath);
@@ -221,6 +223,23 @@ export class TvBridge {
       if (c.readyState === WebSocket.OPEN) {
         c.send(msg);
         n++;
+      }
+    }
+    if (action === 'OPEN_URL') {
+      const url = params.url;
+      if (typeof url === 'string' && url.trim()) {
+        const appId = params.app_id;
+        logger.info(
+          {
+            action: 'OPEN_URL',
+            url: url.trim(),
+            tvs: n,
+            ...(typeof appId === 'string' && appId.trim()
+              ? { app_id: appId.trim() }
+              : {}),
+          },
+          'tv OPEN_URL',
+        );
       }
     }
     return n;
