@@ -100,8 +100,9 @@ async function connectSocket(
     }
 
     if (connection === 'close') {
-      const reason = (lastDisconnect?.error as { output?: { statusCode?: number } })
-        ?.output?.statusCode;
+      const reason = (
+        lastDisconnect?.error as { output?: { statusCode?: number } }
+      )?.output?.statusCode;
 
       if (reason === DisconnectReason.loggedOut) {
         fs.writeFileSync(STATUS_FILE, 'failed:logged_out');
@@ -130,7 +131,9 @@ async function connectSocket(
       }
       console.log('\n✓ Successfully authenticated with WhatsApp!');
       console.log('  Credentials saved to store/auth/');
-      console.log('  Run: npm run link:whatsapp — to create the TVClaw group and register.\n');
+      console.log(
+        '  Run: npm run link:whatsapp — to create the TVClaw group and register.\n',
+      );
       setTimeout(() => process.exit(0), 1000);
     }
   });

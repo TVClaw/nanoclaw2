@@ -252,7 +252,10 @@ describe('runContainerAgent dry-run', () => {
     expect(onProcess).not.toHaveBeenCalled();
     expect(onOutput).toHaveBeenCalledTimes(1);
     expect(onOutput).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'success', result: expect.stringContaining('[dry-run]') }),
+      expect.objectContaining({
+        status: 'success',
+        result: expect.stringContaining('[dry-run]'),
+      }),
     );
     expect(spawnMock.mock.calls.length).toBe(before);
   });

@@ -81,10 +81,11 @@ function askSecret(prompt: string): Promise<string> {
 
 function onecliOrigin(): string {
   const fromFile = readEnvFile(['ONECLI_URL']).ONECLI_URL;
-  const raw = (process.env.ONECLI_URL || fromFile || DEFAULT_ONECLI_ORIGIN).replace(
-    /\/$/,
-    '',
-  );
+  const raw = (
+    process.env.ONECLI_URL ||
+    fromFile ||
+    DEFAULT_ONECLI_ORIGIN
+  ).replace(/\/$/, '');
   try {
     return new URL(raw).origin;
   } catch {
@@ -184,9 +185,7 @@ async function ensureOneCliAndGateway(origin: string): Promise<string> {
       process.exit(1);
     }
     console.log('onecli not found — installing…');
-    const ok = local
-      ? installOneCliGatewayAndCli()
-      : installOneCliCliOnly();
+    const ok = local ? installOneCliGatewayAndCli() : installOneCliCliOnly();
     if (!ok) {
       console.error('OneCLI install script failed.');
       process.exit(1);
@@ -281,16 +280,22 @@ function run(
   };
 }
 
-function needsAuth(stderr: string, stdout: string, status: number | null): boolean {
+function needsAuth(
+  stderr: string,
+  stdout: string,
+  status: number | null,
+): boolean {
   const t = `${stderr}${stdout}`;
   return (
     status !== 0 &&
-    (/AUTH_REQUIRED|Unauthorized/i.test(t) || /"code"\s*:\s*"AUTH_REQUIRED"/.test(t))
+    (/AUTH_REQUIRED|Unauthorized/i.test(t) ||
+      /"code"\s*:\s*"AUTH_REQUIRED"/.test(t))
   );
 }
 
 function alreadyHasAnthropicSecret(stdout: string): boolean {
-  if (/anthropic/i.test(stdout) && /secret|name|type/i.test(stdout)) return true;
+  if (/anthropic/i.test(stdout) && /secret|name|type/i.test(stdout))
+    return true;
   try {
     const j = JSON.parse(stdout) as unknown;
     if (!Array.isArray(j)) return false;
@@ -360,7 +365,9 @@ async function main(): Promise<void> {
   if (alreadyHasAnthropicSecret(list.stdout)) {
     console.log('');
     console.log('✓ An Anthropic-type secret is already registered.');
-    console.log('  Run npm start (or npm run dev:live) and send a WhatsApp message to test.');
+    console.log(
+      '  Run npm start (or npm run dev:live) and send a WhatsApp message to test.',
+    );
     console.log('');
     process.exit(0);
   }
@@ -419,7 +426,10 @@ async function main(): Promise<void> {
   }
   console.log('✓ Secret stored in OneCLI vault');
 
-  if (value === fromEnv.ANTHROPIC_API_KEY || value === fromEnv.ANTHROPIC_AUTH_TOKEN) {
+  if (
+    value === fromEnv.ANTHROPIC_API_KEY ||
+    value === fromEnv.ANTHROPIC_AUTH_TOKEN
+  ) {
     const y = await ask(
       'Remove the credential line(s) from .env now? (recommended) [Y/n] ',
     );

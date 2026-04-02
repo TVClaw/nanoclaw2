@@ -481,7 +481,9 @@ async function startMessageLoop(): Promise<void> {
   }
   messageLoopRunning = true;
 
-  logger.info(`TVClaw (nanoclaw2) running (default trigger: ${DEFAULT_TRIGGER})`);
+  logger.info(
+    `TVClaw (nanoclaw2) running (default trigger: ${DEFAULT_TRIGGER})`,
+  );
 
   while (true) {
     try {
