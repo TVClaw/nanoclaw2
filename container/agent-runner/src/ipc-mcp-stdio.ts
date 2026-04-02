@@ -42,9 +42,13 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times.",
+  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Hard rule: never put the brain LAN keypad link in user-visible text — do not send any http(s) URL to .../keypad or :8770/keypad (or paste NANOCLAW_TV_HTTP_ORIGIN + /keypad). For TV HTML games, tell the user to scan the QR shown on the TV with their phone, then press START on the remote that opens; do not give a typed URL for the remote.",
   {
-    text: z.string().describe('The message text to send'),
+    text: z
+      .string()
+      .describe(
+        'User-visible text. Must not contain brain keypad URLs (/keypad on the LAN brain). For game remotes, describe QR on TV + START only.',
+      ),
     sender: z
       .string()
       .optional()
@@ -131,10 +135,7 @@ const sendTvCommandInput = z
         need('app_id', !!data.app_id?.trim());
         break;
       case 'OPEN_URL':
-        need(
-          'url or game',
-          !!(data.url?.trim() || data.game),
-        );
+        need('url', !!data.url?.trim());
         break;
       case 'MEDIA_CONTROL':
         need('control', data.control != null);
@@ -201,7 +202,7 @@ function tvPayloadFromArgs(args: SendTvArgs): {
 
 server.tool(
   'send_tv_command',
-  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app.`,
+  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app. After OPEN_URL to an HTML game on the brain, any follow-up to the user must not include the keypad URL: never write http(s) .../keypad or the brain origin + /keypad in chat or send_message. Say only: look at the TV, scan the QR on the TV with the phone, then press START on the remote.`,
   sendTvCommandInput.shape,
   async (args) => {
     const parsed = sendTvCommandInput.safeParse(args);
@@ -229,7 +230,7 @@ server.tool(
             {
               type: 'text' as const,
               text:
-                'OPEN_URL: set url to a full http(s) URL, or use game=snake|tetris|pong|breakout|flappy (needs NANOCLAW_TV_HTTP_ORIGIN in the container).',
+                'OPEN_URL: set url to a full http(s) URL or a site-relative path (needs NANOCLAW_TV_HTTP_ORIGIN in the container for non-absolute URLs).',
             },
           ],
           isError: true,
