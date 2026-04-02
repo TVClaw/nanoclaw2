@@ -225,23 +225,7 @@ export class TvBridge {
         n++;
       }
     }
-    if (action === 'OPEN_URL') {
-      const url = params.url;
-      if (typeof url === 'string' && url.trim()) {
-        const appId = params.app_id;
-        logger.info(
-          {
-            action: 'OPEN_URL',
-            url: url.trim(),
-            tvs: n,
-            ...(typeof appId === 'string' && appId.trim()
-              ? { app_id: appId.trim() }
-              : {}),
-          },
-          'tv OPEN_URL',
-        );
-      }
-    }
+    logger.info({ action, params, tvs: n }, 'tv command');
     return n;
   }
 

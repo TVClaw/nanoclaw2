@@ -179,7 +179,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
                         const n = bridge.sendToAll(action, params);
                         if (n === 0) {
                           logger.warn(
-                            { sourceGroup, action },
+                            { sourceGroup, action, params },
                             'tv_command: no TVs connected',
                           );
                         }
@@ -188,13 +188,8 @@ export function startIpcWatcher(deps: IpcDeps): void {
                       const n = bridge.sendToAll(action, params);
                       if (n === 0) {
                         logger.warn(
-                          { sourceGroup, action },
+                          { sourceGroup, action, params },
                           'tv_command: no TVs connected',
-                        );
-                      } else {
-                        logger.info(
-                          { sourceGroup, action, tvs: n },
-                          'tv_command sent to TVs',
                         );
                       }
                     }
@@ -237,7 +232,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
               const n = bridge.sendToAll('OPEN_URL', { url });
               if (n === 0) {
                 logger.warn(
-                  { sourceGroup },
+                  { sourceGroup, action: 'OPEN_URL', params: { url } },
                   'vibe page hosted but no TVs connected',
                 );
               }

@@ -24,6 +24,6 @@ Actions:
 
 **Vibe / HTML on TV:** Put full HTML inside `<vibe-page>...</vibe-page>` in your reply; the host strips it for chat, hosts the page, and can open it on the TV. Follow group CLAUDE.md for TV-safe layout (large type, readable from distance).
 
-**Netflix titles:** Prefer a watch URL: `https://www.netflix.com/watch/<id>` via **OPEN_URL** when you know the id (resolve id from the web if needed).
+**For Netflix:** always follow the **netflix-deeplinks** skill — resolve the numeric title ID (e.g. via web search), then **OPEN_URL** with `http://www.netflix.com/watch/<id>` and `app_id`: `com.netflix.ninja`. Do not use `/title/` or generic https links as a substitute. Never use **SEARCH** as the first attempt.
 
 After MCP or skill changes, rebuild the agent image: `bash container/build.sh` from the repo root.
