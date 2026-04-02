@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pong</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 100vw; height: 100vh; overflow: hidden; background: #06070d; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W = 0, H = 0;
+function resize() {
+  canvas.width = W = window.innerWidth;
+  canvas.height = H = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (state !== 'playing') draw(); });
+
+const remoteUrl = `${location.protocol}//${location.host}/keypad`;
+const qrImg = new Image();
+qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(remoteUrl)}`;
+
+let state = 'idle';
+let ticker = null;
+let playerUp = false, playerDown = false, boost = false;
+let playerScore = 0, aiScore = 0, bestDiff = 0;
+let player, ai, ball;
+
+function resetMatch() {
+  player = { x: 40, y: H / 2 - 60, w: 18, h: 120, speed: 8 };
+  ai = { x: W - 58, y: H / 2 - 60, w: 18, h: 120, speed: 7.4 };
+  ball = { x: W / 2, y: H / 2, r: 12, vx: 7 * (Math.random() > 0.5 ? 1 : -1), vy: (Math.random() * 6 - 3), waiting: true };
+}
+
+function startGame() {
+  playerScore = 0;
+  aiScore = 0;
+  resetMatch();
+  state = 'playing';
+  clearInterval(ticker);
+  ticker = setInterval(tick, 16);
+}
+
+function serve() {
+  ball.waiting = false;
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  ball.vx = dir * (6.5 + Math.random() * 2);
+  ball.vy = Math.random() * 6 - 3;
+}
+
+function endGame() {
+  clearInterval(ticker);
+  const diff = playerScore - aiScore;
+  if (diff > bestDiff) bestDiff = diff;
+  state = 'over';
+}
+
+function scorePoint(playerWon) {
+  if (playerWon) playerScore++; else aiScore++;
+  if (playerScore >= 7 || aiScore >= 7) {
+    endGame();
+    return;
+  }
+  ball.x = W / 2;
+  ball.y = H / 2;
+  ball.waiting = true;
+}
+
+function tick() {
+  const moveSpeed = boost ? player.speed + 4 : player.speed;
+  if (playerUp) player.y -= moveSpeed;
+  if (playerDown) player.y += moveSpeed;
+  if (player.y < 0) player.y = 0;
+  if (player.y + player.h > H) player.y = H - player.h;
+
+  const aiTarget = ball.y - ai.h / 2;
+  if (ai.y < aiTarget - 8) ai.y += ai.speed;
+  else if (ai.y > aiTarget + 8) ai.y -= ai.speed;
+  if (ai.y < 0) ai.y = 0;
+  if (ai.y + ai.h > H) ai.y = H - ai.h;
+
+  if (ball.waiting) return;
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  if (ball.y - ball.r <= 0 || ball.y + ball.r >= H) ball.vy *= -1;
+
+  if (
+    ball.x - ball.r <= player.x + player.w &&
+    ball.x + ball.r >= player.x &&
+    ball.y + ball.r >= player.y &&
+    ball.y - ball.r <= player.y + player.h &&
+    ball.vx < 0
+  ) {
+    const impact = (ball.y - (player.y + player.h / 2)) / (player.h / 2);
+    ball.vx = Math.abs(ball.vx) + 0.2;
+    ball.vy = impact * 7.2;
+  }
+
+  if (
+    ball.x + ball.r >= ai.x &&
+    ball.x - ball.r <= ai.x + ai.w &&
+    ball.y + ball.r >= ai.y &&
+    ball.y - ball.r <= ai.y + ai.h &&
+    ball.vx > 0
+  ) {
+    const impact = (ball.y - (ai.y + ai.h / 2)) / (ai.h / 2);
+    ball.vx = -(Math.abs(ball.vx) + 0.2);
+    ball.vy = impact * 7.2;
+  }
+
+  if (ball.x + ball.r < 0) scorePoint(false);
+  if (ball.x - ball.r > W) scorePoint(true);
+}
+
+function connectSse() {
+  const es = new EventSource('http://' + location.host + '/vibe-key-sse');
+  es.onerror = () => { es.close(); setTimeout(connectSse, 2000); };
+  es.onmessage = e => handleInput(e.data.trim().toLowerCase(), true);
+}
+connectSse();
+
+window.addEventListener('keydown', e => {
+  const map = { ArrowUp: 'up', ArrowDown: 'down', Enter: 'start', ' ': 'a', Shift: 'b' };
+  const cmd = map[e.key];
+  if (!cmd) return;
+  e.preventDefault();
+  e.stopPropagation();
+  handleInput(cmd, true);
+}, true);
+
+window.addEventListener('keyup', e => {
+  const map = { ArrowUp: 'up_up', ArrowDown: 'down_up', ' ': 'a_up', Shift: 'b_up' };
+  const cmd = map[e.key];
+  if (!cmd) return;
+  handleInput(cmd, false);
+}, true);
+
+function handleInput(cmd, down) {
+  if (cmd === 'start') {
+    if (state !== 'playing') startGame();
+    else if (ball.waiting) serve();
+    return;
+  }
+  if (state !== 'playing') return;
+  if (cmd === 'up') { playerUp = true; playerDown = false; }
+  if (cmd === 'down') { playerDown = true; playerUp = false; }
+  if (cmd === 'up_up') playerUp = false;
+  if (cmd === 'down_up') playerDown = false;
+  if ((cmd === 'a' || cmd === 'b') && down) boost = true;
+  if ((cmd === 'a_up' || cmd === 'b_up') && !down) boost = false;
+  if ((cmd === 'a' || cmd === 'b' || cmd === 'x' || cmd === 'y') && ball.waiting) serve();
+}
+
+function loop() {
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function draw() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a1222');
+  grad.addColorStop(1, '#080c18');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === 'idle') { drawIdle(); return; }
+  drawGame();
+  if (state === 'over') drawOver();
+}
+
+function drawGame() {
+  ctx.strokeStyle = 'rgba(100,150,255,0.32)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([16, 18]);
+  ctx.beginPath();
+  ctx.moveTo(W / 2, 0);
+  ctx.lineTo(W / 2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#22d3ee';
+  roundRect(player.x, player.y, player.w, player.h, 8);
+  ctx.fillStyle = '#a78bfa';
+  roundRect(ai.x, ai.y, ai.w, ai.h, 8);
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 48px monospace';
+  ctx.fillStyle = 'rgba(220,232,255,0.94)';
+  ctx.fillText(playerScore + ' : ' + aiScore, W / 2, 14);
+
+  if (bestDiff > 0) {
+    ctx.font = '20px monospace';
+    ctx.fillStyle = 'rgba(167,139,250,0.7)';
+    ctx.fillText('BEST DIFF +' + bestDiff, W / 2, 68);
+  }
+
+  if (ball.waiting && state === 'playing') {
+    ctx.font = '24px monospace';
+    ctx.fillStyle = 'rgba(180,200,255,0.72)';
+    ctx.fillText('Press START to serve', W / 2, H - 80);
+  }
+}
+
+function drawIdle() {
+  const qrSize = Math.max(180, Math.min(300, Math.floor(Math.min(W, H) * 0.27)));
+  const qrX = W / 2 - qrSize / 2;
+  const qrY = H / 2 - 46 - qrSize / 2;
+  ctx.fillStyle = 'rgba(10,14,28,0.9)';
+  roundRect(qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 18);
+  ctx.fillStyle = '#fff';
+  roundRect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16, 12);
+  if (qrImg.complete && qrImg.naturalWidth > 0) ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 72px monospace';
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillText('PONG', W / 2, qrY - 60);
+  ctx.font = '28px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.72)';
+  ctx.fillText('Scan to open gamepad on phone', W / 2, qrY + qrSize + 40);
+  ctx.font = '20px monospace';
+  ctx.fillStyle = 'rgba(140,165,245,0.78)';
+  ctx.fillText(remoteUrl, W / 2, qrY + qrSize + 74);
+  ctx.font = '24px monospace';
+  ctx.fillStyle = 'rgba(180,200,255,0.78)';
+  ctx.fillText('Then press START on the gamepad', W / 2, qrY + qrSize + 106);
+}
+
+function drawOver() {
+  ctx.fillStyle = 'rgba(6,7,13,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 62px monospace';
+  ctx.fillStyle = '#f43f5e';
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 70);
+  ctx.font = 'bold 40px monospace';
+  ctx.fillStyle = '#e0e8ff';
+  ctx.fillText(playerScore + ' : ' + aiScore, W / 2, H / 2);
+  ctx.font = '24px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.72)';
+  ctx.fillText('Press START to restart', W / 2, H / 2 + 92);
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+canvas.focus();
+</script>
+</body>
+</html>

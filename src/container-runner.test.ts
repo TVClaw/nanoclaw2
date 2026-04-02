@@ -16,6 +16,7 @@ vi.mock('./config.js', () => ({
   IDLE_TIMEOUT: 1800000, // 30min
   ONECLI_URL: 'http://localhost:10254',
   TIMEZONE: 'America/Los_Angeles',
+  isAgentDryRun: vi.fn(() => false),
 }));
 
 // Mock logger
@@ -105,6 +106,9 @@ vi.mock('child_process', async () => {
   };
 });
 
+import { spawn } from 'child_process';
+
+import { isAgentDryRun } from './config.js';
 import { runContainerAgent, ContainerOutput } from './container-runner.js';
 import type { RegisteredGroup } from './types.js';
 
@@ -225,5 +229,31 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
+  });
+});
+
+describe('runContainerAgent dry-run', () => {
+  it('does not spawn and returns synthetic output', async () => {
+    vi.mocked(isAgentDryRun).mockReturnValueOnce(true);
+    const spawnMock = vi.mocked(spawn);
+    const before = spawnMock.mock.calls.length;
+
+    const onProcess = vi.fn();
+    const onOutput = vi.fn(async () => {});
+    const result = await runContainerAgent(
+      testGroup,
+      testInput,
+      onProcess,
+      onOutput,
+    );
+
+    expect(result.status).toBe('success');
+    expect(result.result).toContain('[dry-run]');
+    expect(onProcess).not.toHaveBeenCalled();
+    expect(onOutput).toHaveBeenCalledTimes(1);
+    expect(onOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'success', result: expect.stringContaining('[dry-run]') }),
+    );
+    expect(spawnMock.mock.calls.length).toBe(before);
   });
 });

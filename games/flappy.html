@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Flappy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 100vw; height: 100vh; overflow: hidden; background: #06070d; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W = 0, H = 0;
+function resize() {
+  canvas.width = W = window.innerWidth;
+  canvas.height = H = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (state !== 'playing') draw(); });
+
+const remoteUrl = `${location.protocol}//${location.host}/keypad`;
+const qrImg = new Image();
+qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(remoteUrl)}`;
+
+let state = 'idle';
+let birdX = 0, birdY = 0, birdVy = 0;
+let score = 0, best = 0;
+let pipes = [];
+let ticker = null;
+let spawnTick = 0;
+let bgShift = 0;
+
+function resetRound() {
+  birdX = W * 0.28;
+  birdY = H * 0.5;
+  birdVy = 0;
+  score = 0;
+  pipes = [];
+  spawnTick = 0;
+}
+
+function startGame() {
+  resetRound();
+  state = 'playing';
+  clearInterval(ticker);
+  ticker = setInterval(tick, 16);
+}
+
+function endGame() {
+  clearInterval(ticker);
+  if (score > best) best = score;
+  state = 'over';
+}
+
+function flap() {
+  if (state !== 'playing') return;
+  birdVy = -8.2;
+}
+
+function spawnPipe() {
+  const gap = Math.max(150, H * 0.24);
+  const margin = 70;
+  const topH = margin + Math.random() * Math.max(20, H - gap - margin * 2);
+  pipes.push({ x: W + 40, w: 88, topH, gap, passed: false });
+}
+
+function tick() {
+  bgShift = (bgShift + 2) % 48;
+  spawnTick++;
+  if (spawnTick >= 90) {
+    spawnTick = 0;
+    spawnPipe();
+  }
+
+  birdVy += 0.44;
+  birdY += birdVy;
+
+  for (const p of pipes) {
+    p.x -= 5.3;
+    if (!p.passed && p.x + p.w < birdX - 22) {
+      p.passed = true;
+      score++;
+    }
+  }
+  pipes = pipes.filter(p => p.x + p.w > -10);
+
+  const birdR = 19;
+  if (birdY - birdR < 0 || birdY + birdR > H) {
+    endGame();
+    return;
+  }
+
+  for (const p of pipes) {
+    const inX = birdX + birdR > p.x && birdX - birdR < p.x + p.w;
+    const inTop = birdY - birdR < p.topH;
+    const inBot = birdY + birdR > p.topH + p.gap;
+    if (inX && (inTop || inBot)) {
+      endGame();
+      return;
+    }
+  }
+}
+
+function connectSse() {
+  const es = new EventSource('http://' + location.host + '/vibe-key-sse');
+  es.onerror = () => { es.close(); setTimeout(connectSse, 2000); };
+  es.onmessage = e => handleInput(e.data.trim().toLowerCase());
+}
+connectSse();
+
+window.addEventListener('keydown', e => {
+  const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'start', ' ': 'a' };
+  const cmd = map[e.key];
+  if (!cmd) return;
+  e.preventDefault();
+  e.stopPropagation();
+  handleInput(cmd);
+}, true);
+
+function handleInput(cmd) {
+  if (cmd === 'start') { startGame(); return; }
+  if (state !== 'playing') return;
+  if (cmd === 'up' || cmd === 'a' || cmd === 'b' || cmd === 'x' || cmd === 'y') flap();
+}
+
+function loop() {
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function draw() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0b1228');
+  grad.addColorStop(1, '#07111e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(50,120,190,0.25)';
+  ctx.lineWidth = 1;
+  for (let i = -1; i < Math.ceil(W / 48) + 2; i++) {
+    const x = i * 48 - bgShift;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+
+  if (state === 'idle') { drawIdle(); return; }
+  drawWorld();
+  if (state === 'over') drawOver();
+}
+
+function drawWorld() {
+  for (const p of pipes) {
+    const bottomY = p.topH + p.gap;
+    ctx.fillStyle = '#00d47e';
+    roundRect(p.x, 0, p.w, p.topH, 10);
+    roundRect(p.x, bottomY, p.w, H - bottomY, 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    roundRect(p.x + 8, 0, 14, p.topH, 8);
+    roundRect(p.x + 8, bottomY, 14, H - bottomY, 8);
+  }
+
+  ctx.fillStyle = '#ffd34f';
+  ctx.beginPath();
+  ctx.arc(birdX, birdY, 19, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ff8b2a';
+  ctx.beginPath();
+  ctx.moveTo(birdX + 8, birdY);
+  ctx.lineTo(birdX + 26, birdY - 6);
+  ctx.lineTo(birdX + 26, birdY + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#111827';
+  ctx.beginPath();
+  ctx.arc(birdX + 6, birdY - 7, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 34px monospace';
+  ctx.fillStyle = 'rgba(0,212,255,0.86)';
+  ctx.fillText(score, W - 20, 14);
+  if (best > 0 && best !== score) {
+    ctx.font = '20px monospace';
+    ctx.fillStyle = 'rgba(167,139,250,0.7)';
+    ctx.fillText('BEST ' + best, W - 20, 54);
+  }
+}
+
+function drawIdle() {
+  const qrSize = Math.max(180, Math.min(300, Math.floor(Math.min(W, H) * 0.27)));
+  const qrX = W / 2 - qrSize / 2;
+  const qrY = H / 2 - 46 - qrSize / 2;
+  ctx.fillStyle = 'rgba(10,14,28,0.9)';
+  roundRect(qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 18);
+  ctx.fillStyle = '#fff';
+  roundRect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16, 12);
+  if (qrImg.complete && qrImg.naturalWidth > 0) ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 72px monospace';
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillText('FLAPPY', W / 2, qrY - 60);
+  ctx.font = '28px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.72)';
+  ctx.fillText('Scan to open gamepad on phone', W / 2, qrY + qrSize + 40);
+  ctx.font = '20px monospace';
+  ctx.fillStyle = 'rgba(140,165,245,0.78)';
+  ctx.fillText(remoteUrl, W / 2, qrY + qrSize + 74);
+  ctx.font = '24px monospace';
+  ctx.fillStyle = 'rgba(180,200,255,0.78)';
+  ctx.fillText('Then press START on the gamepad', W / 2, qrY + qrSize + 106);
+}
+
+function drawOver() {
+  ctx.fillStyle = 'rgba(6,7,13,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 62px monospace';
+  ctx.fillStyle = '#f43f5e';
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 70);
+  ctx.font = 'bold 46px monospace';
+  ctx.fillStyle = '#e0e8ff';
+  ctx.fillText(score, W / 2, H / 2);
+  ctx.font = '24px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.72)';
+  ctx.fillText('Press START to restart', W / 2, H / 2 + 92);
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+canvas.focus();
+</script>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>TVClaw Remote</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --bg:       #06070d;
+    --border:   #1a2040;
+    --btn:      #0f1627;
+    --accent:   #00d4ff;
+    --col-a:    #3b82f6;
+    --col-b:    #ef4444;
+    --col-x:    #ec4899;
+    --col-y:    #22c55e;
+    --col-sys:  #a78bfa;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: #d0d8ff;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    user-select: none;
+    touch-action: none;
+  }
+
+  /* ── Portrait guard ── */
+  #rotate-hint {
+    display: none;
+    position: fixed; inset: 0;
+    background: var(--bg);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 99;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  #rotate-hint svg { width: 44px; height: 44px; fill: var(--accent); animation: rot 1.6s ease-in-out infinite; }
+  #rotate-hint .tap-hint { font-size: 10px; opacity: 0.5; letter-spacing: 0.18em; }
+  @keyframes rot { 0%,100%{transform:rotate(0deg)} 50%{transform:rotate(90deg)} }
+  @media (orientation: portrait) { #rotate-hint{display:flex} #controller{display:none} }
+
+  #fs-btn {
+    background: none; border: none; cursor: pointer; padding: 2px;
+    color: rgba(0,212,255,0.4); line-height: 1;
+    transition: color 0.2s;
+  }
+  #fs-btn:hover, #fs-btn:active { color: var(--accent); }
+
+  /* ── Controller shell ── */
+  #controller {
+    width: 100%; height: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-rows: auto 1fr;
+    align-items: center;
+    padding: 6px 18px 14px;
+    gap: 0 10px;
+  }
+
+  /* ── Header ── */
+  .header {
+    grid-column: 1/-1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
+  }
+  .logo-area { display: flex; align-items: center; gap: 8px; }
+  #logo-canvas { height: 26px; width: auto; filter: drop-shadow(0 0 6px rgba(0,212,255,0.4)); }
+  .brand {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase;
+    background: linear-gradient(90deg, var(--accent), #a78bfa, var(--accent));
+    background-size: 200% auto;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    animation: shine 3s linear infinite;
+  }
+  @keyframes shine { to { background-position: 200% center; } }
+  .status {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); background: rgba(0,212,255,0.07);
+    border: 1px solid rgba(0,212,255,0.2); border-radius: 999px; padding: 3px 12px; transition: all 0.3s;
+  }
+  .status.err { color:#f87171; background:rgba(248,113,113,0.07); border-color:rgba(248,113,113,0.25); }
+
+  /* ── D-pad disc ── */
+  .dpad-wrap { display:flex; align-items:center; justify-content:center; }
+
+  #dpad {
+    position: relative;
+    width: min(160px, 34vw);
+    height: min(160px, 34vw);
+    border-radius: 50%;
+    background: radial-gradient(circle at center, #131c38 0%, #090c1a 100%);
+    border: 2px solid #1e2a50;
+    box-shadow: 0 0 0 4px #06070d, 0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: box-shadow 0.15s;
+  }
+
+  /* Cross dividers */
+  #dpad::before, #dpad::after {
+    content: ''; position: absolute; background: rgba(255,255,255,0.05); border-radius: 2px;
+  }
+  #dpad::before { width: 100%; height: 1px; top: 50%; left: 0; transform: translateY(-50%); }
+  #dpad::after  { width: 1px; height: 100%; left: 50%; top: 0; transform: translateX(-50%); }
+
+  /* Directional glows (active via JS) */
+  #dpad-glow {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: transparent; transition: background 0.12s; pointer-events: none;
+  }
+
+  /* Directional arrow labels */
+  .dpad-arrow {
+    position: absolute; font-size: clamp(12px, 2.5vw, 16px);
+    color: rgba(100,130,200,0.5); transition: color 0.1s, text-shadow 0.1s; pointer-events: none;
+    line-height: 1;
+  }
+  .dpad-arrow.up    { top: 10%;  left: 50%; transform: translateX(-50%); }
+  .dpad-arrow.down  { bottom: 10%; left: 50%; transform: translateX(-50%); }
+  .dpad-arrow.left  { left: 10%; top: 50%; transform: translateY(-50%); }
+  .dpad-arrow.right { right: 10%; top: 50%; transform: translateY(-50%); }
+  .dpad-arrow.active { color: var(--accent); text-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent); }
+
+  /* Center dot */
+  .dpad-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 20%; height: 20%; border-radius: 50%;
+    background: #090c1a; border: 1px solid #1a2040; pointer-events: none;
+  }
+
+  /* ── Center cluster ── */
+  .center-cluster { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .sys-btns { display:flex; gap:10px; }
+  .sys-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 50px; height: 20px; border-radius: 999px;
+    background: var(--btn); border: 1px solid var(--border);
+    font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--col-sys); cursor: pointer;
+    transition: background 0.08s, box-shadow 0.08s, transform 0.06s;
+  }
+  .sys-btn.pressed {
+    transform: scale(0.9); background: rgba(167,139,250,0.12);
+    box-shadow: 0 0 10px rgba(167,139,250,0.4);
+  }
+
+  /* ── Face buttons ── */
+  .face-wrap { display:flex; align-items:center; justify-content:center; }
+  .face {
+    display: grid;
+    grid-template-areas: ". y ." "x . b" ". a .";
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    gap: 6px;
+    width: min(160px, 34vw);
+    height: min(160px, 34vw);
+  }
+  .face-btn {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--btn); border: 1.5px solid var(--border);
+    font-size: clamp(13px, 2.8vw, 17px); font-weight: 700;
+    cursor: pointer; position: relative;
+    transition: background 0.08s, box-shadow 0.08s, transform 0.06s;
+  }
+  .face-btn::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 20%, rgba(255,255,255,0.08) 0%, transparent 65%);
+    pointer-events: none;
+  }
+  [data-dir=y] { grid-area:y; color:var(--col-y); border-color:rgba(34,197,94,0.3); }
+  [data-dir=a] { grid-area:a; color:var(--col-a); border-color:rgba(59,130,246,0.3); }
+  [data-dir=x] { grid-area:x; color:var(--col-x); border-color:rgba(236,72,153,0.3); }
+  [data-dir=b] { grid-area:b; color:var(--col-b); border-color:rgba(239,68,68,0.3); }
+
+  [data-dir=y].pressed { transform:scale(0.88); background:rgba(34,197,94,0.13);  box-shadow:0 0 16px rgba(34,197,94,0.55),  0 0 32px rgba(34,197,94,0.15);  }
+  [data-dir=a].pressed { transform:scale(0.88); background:rgba(59,130,246,0.13); box-shadow:0 0 16px rgba(59,130,246,0.55), 0 0 32px rgba(59,130,246,0.15); }
+  [data-dir=x].pressed { transform:scale(0.88); background:rgba(236,72,153,0.13); box-shadow:0 0 16px rgba(236,72,153,0.55), 0 0 32px rgba(236,72,153,0.15); }
+  [data-dir=b].pressed { transform:scale(0.88); background:rgba(239,68,68,0.13);  box-shadow:0 0 16px rgba(239,68,68,0.55),  0 0 32px rgba(239,68,68,0.15);  }
+
+  /* Scanline */
+  body::after {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:5;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px);
+  }
+</style>
+</head>
+<body>
+
+<div id="rotate-hint">
+  <svg viewBox="0 0 24 24"><path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5C23.44 4.84 18.29 0 12 0l-.66.03 3.81 3.81 1.33-1.32zm-6.25-.77c-.59-.59-1.54-.59-2.12 0L1.75 8.11c-.59.59-.59 1.54 0 2.12l12.02 12.02c.59.59 1.54.59 2.12 0l6.36-6.36c.59-.59.59-1.54 0-2.12L10.23 1.75zm4.6 19.44L2.81 9.17l6.36-6.36 12.02 12.02-6.36 6.36zm-7.31.29C4.25 19.94 1.91 16.76 1.55 13H.05C.56 19.16 5.71 24 12 24l.66-.03-3.81-3.81-1.33 1.32z"/></svg>
+  Rotate to landscape
+  <span class="tap-hint">tap anywhere to go fullscreen</span>
+</div>
+
+<div id="controller">
+  <div class="header">
+    <div class="logo-area">
+      <canvas id="logo-canvas"></canvas>
+      <span class="brand">Game Remote</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="status" id="status">Connecting…</div>
+      <button id="fs-btn" title="Fullscreen">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Left: D-pad disc -->
+  <div class="dpad-wrap">
+    <div id="dpad">
+      <div id="dpad-glow"></div>
+      <span class="dpad-arrow up"   id="arr-up">▲</span>
+      <span class="dpad-arrow down" id="arr-down">▼</span>
+      <span class="dpad-arrow left" id="arr-left">◀</span>
+      <span class="dpad-arrow right"id="arr-right">▶</span>
+      <div class="dpad-center"></div>
+    </div>
+  </div>
+
+  <!-- Center: start / select -->
+  <div class="center-cluster">
+    <div class="sys-btns">
+      <button class="sys-btn" data-dir="select">SEL</button>
+      <button class="sys-btn" data-dir="start">START</button>
+    </div>
+  </div>
+
+  <!-- Right: face buttons -->
+  <div class="face-wrap">
+    <div class="face">
+      <button class="face-btn" data-dir="y">Y</button>
+      <button class="face-btn" data-dir="x">X</button>
+      <button class="face-btn" data-dir="b">B</button>
+      <button class="face-btn" data-dir="a">A</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Logo ──
+  (function () {
+    const canvas = document.getElementById('logo-canvas');
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < d.data.length; i += 4)
+        if (d.data[i] > 230 && d.data[i+1] > 230 && d.data[i+2] > 230) d.data[i+3] = 0;
+      ctx.putImageData(d, 0, 0);
+    };
+    img.src = '/tvclaw-logo.png';
+  })();
+
+  // ── Fullscreen + orientation lock ──
+  const fsBtn = document.getElementById('fs-btn');
+  const fsEnterIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+  const fsExitIcon  = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`;
+
+  function updateFsIcon() {
+    fsBtn.innerHTML = document.fullscreenElement ? fsExitIcon : fsEnterIcon;
+  }
+  document.addEventListener('fullscreenchange', updateFsIcon);
+
+  async function goFullscreen() {
+    try { await document.documentElement.requestFullscreen(); } catch (_) {}
+    try { await screen.orientation.lock('landscape'); } catch (_) {}
+  }
+  async function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch (_) {}
+    } else {
+      await goFullscreen();
+    }
+  }
+
+  document.getElementById('rotate-hint').addEventListener('click', goFullscreen);
+  fsBtn.addEventListener('click', toggleFullscreen);
+  document.addEventListener('touchstart', goFullscreen, { once: true, passive: true });
+
+  // ── Status / ping ──
+  const statusEl = document.getElementById('status');
+  let online = false;
+  function setStatus(txt, err) { statusEl.textContent = txt; statusEl.className = 'status' + (err ? ' err' : ''); }
+  async function ping() {
+    try { if ((await fetch('/health', { cache:'no-store' })).ok && !online) { online=true; setStatus('Ready'); } }
+    catch { online=false; setStatus('Offline',true); }
+  }
+  ping(); setInterval(ping, 5000);
+
+  // ── Send ──
+  async function send(dir) {
+    try {
+      await fetch('/vibe-key', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dir}) });
+      if (!online) { online=true; setStatus('Ready'); }
+    } catch { setStatus('Send failed',true); }
+  }
+
+  // ── D-pad disc ──
+  const dpad   = document.getElementById('dpad');
+  const glow   = document.getElementById('dpad-glow');
+  const arrows = { up: document.getElementById('arr-up'), down: document.getElementById('arr-down'), left: document.getElementById('arr-left'), right: document.getElementById('arr-right') };
+  const glowPos = { up:'50% 15%', down:'50% 85%', left:'15% 50%', right:'85% 50%' };
+
+  let activeDir = null;
+  let repeatTimer = null;
+
+  function dirFromTouch(touch) {
+    const r = dpad.getBoundingClientRect();
+    const dx = touch.clientX - (r.left + r.width  / 2);
+    const dy = touch.clientY - (r.top  + r.height / 2);
+    // Dead-zone: ignore taps very near center
+    if (Math.abs(dx) < r.width * 0.08 && Math.abs(dy) < r.height * 0.08) return null;
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI; // -180..180
+    if (angle > -45  && angle <=  45)  return 'right';
+    if (angle >  45  && angle <= 135)  return 'down';
+    if (angle > 135  || angle <= -135) return 'left';
+    return 'up';
+  }
+
+  function applyDir(dir) {
+    if (dir === activeDir) return;
+    clearDir();
+    if (!dir) return;
+    activeDir = dir;
+    if (navigator.vibrate) navigator.vibrate(12);
+    arrows[dir].classList.add('active');
+    glow.style.background = `radial-gradient(circle at ${glowPos[dir]}, rgba(0,212,255,0.18) 0%, transparent 65%)`;
+    dpad.style.boxShadow = `0 0 0 4px #06070d, 0 4px 24px rgba(0,0,0,0.6), 0 0 20px rgba(0,212,255,0.2), inset 0 1px 0 rgba(255,255,255,0.04)`;
+    send(dir);
+    repeatTimer = setInterval(() => send(dir), 120);
+  }
+
+  function clearDir() {
+    if (activeDir) arrows[activeDir].classList.remove('active');
+    activeDir = null;
+    clearInterval(repeatTimer); repeatTimer = null;
+    glow.style.background = 'transparent';
+    dpad.style.boxShadow = '';
+  }
+
+  dpad.addEventListener('touchstart', e => {
+    e.preventDefault();
+    applyDir(dirFromTouch(e.touches[0]));
+  }, { passive: false });
+
+  dpad.addEventListener('touchmove', e => {
+    e.preventDefault();
+    applyDir(dirFromTouch(e.touches[0]));
+  }, { passive: false });
+
+  dpad.addEventListener('touchend',    () => clearDir(), { passive: true });
+  dpad.addEventListener('touchcancel', () => clearDir(), { passive: true });
+
+  // Mouse fallback (desktop testing)
+  let mouseDown = false;
+  dpad.addEventListener('mousedown',  e => { mouseDown=true; applyDir(dirFromTouch(e)); });
+  dpad.addEventListener('mousemove',  e => { if (mouseDown) applyDir(dirFromTouch(e)); });
+  dpad.addEventListener('mouseup',    () => { mouseDown=false; clearDir(); });
+  dpad.addEventListener('mouseleave', () => { mouseDown=false; clearDir(); });
+
+  // ── Face + sys buttons ──
+  document.querySelectorAll('.face-btn, .sys-btn').forEach(btn => {
+    const dir = btn.dataset.dir;
+    const press   = e => { e.preventDefault(); btn.classList.add('pressed'); send(dir); if (navigator.vibrate) navigator.vibrate(15); };
+    const release = () => btn.classList.remove('pressed');
+    btn.addEventListener('touchstart',  press,   { passive: false });
+    btn.addEventListener('touchend',    release, { passive: true });
+    btn.addEventListener('touchcancel', release, { passive: true });
+    btn.addEventListener('mousedown',   press);
+    btn.addEventListener('mouseup',     release);
+    btn.addEventListener('mouseleave',  release);
+  });
+</script>
+</body>
+</html>

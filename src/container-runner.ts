@@ -14,6 +14,7 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   ONECLI_URL,
+  isAgentDryRun,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -27,6 +28,7 @@ import {
 import { OneCLI } from '@onecli-sh/sdk';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
+import { getTvBridge } from './tv-bridge.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
 
@@ -170,6 +172,8 @@ function buildVolumeMounts(
   const groupIpcDir = resolveGroupIpcPath(group.folder);
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
+  fs.mkdirSync(path.join(groupIpcDir, 'tv'), { recursive: true });
+  fs.mkdirSync(path.join(groupIpcDir, 'vibe'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
   mounts.push({
     hostPath: groupIpcDir,
@@ -280,6 +284,20 @@ export async function runContainerAgent(
   onProcess: (proc: ChildProcess, containerName: string) => void,
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<ContainerOutput> {
+  if (isAgentDryRun()) {
+    const promptChars = input.prompt.length;
+    logger.info(
+      { group: group.name, dryRun: true, promptChars },
+      'Skipping container (TVCLAW_AGENT_DRY_RUN)',
+    );
+    const synthetic: ContainerOutput = {
+      status: 'success',
+      result: `[dry-run] No Claude or container. Prompt was ${promptChars} chars. Use npm start (or TVCLAW_AGENT_DRY_RUN=0) for a real model call.`,
+    };
+    if (onOutput) await onOutput(synthetic);
+    return synthetic;
+  }
+
   const startTime = Date.now();
 
   const groupDir = resolveGroupFolderPath(group.folder);
@@ -296,6 +314,14 @@ export async function runContainerAgent(
     mounts,
     containerName,
     agentIdentifier,
+  );
+
+  const tvOrigin = getTvBridge().getHttpBaseUrl();
+  containerArgs.splice(
+    containerArgs.length - 1,
+    0,
+    '-e',
+    `NANOCLAW_TV_HTTP_ORIGIN=${tvOrigin}`,
   );
 
   logger.debug(
@@ -722,15 +748,13 @@ export function writeGroupsSnapshot(
   const visibleGroups = isMain ? groups : [];
 
   const groupsFile = path.join(groupIpcDir, 'available_groups.json');
-  fs.writeFileSync(
-    groupsFile,
-    JSON.stringify(
-      {
-        groups: visibleGroups,
-        lastSync: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-  );
+  const snapshot: Record<string, unknown> = {
+    groups: visibleGroups,
+    lastSync: new Date().toISOString(),
+  };
+  if (isMain) {
+    snapshot.tv_brain_http_origin = getTvBridge().getHttpBaseUrl();
+    snapshot.tv_http_env = 'NANOCLAW_TV_HTTP_ORIGIN';
+  }
+  fs.writeFileSync(groupsFile, JSON.stringify(snapshot, null, 2));
 }

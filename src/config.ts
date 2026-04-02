@@ -95,3 +95,15 @@ function resolveConfigTimezone(): string {
   return 'UTC';
 }
 export const TIMEZONE = resolveConfigTimezone();
+
+export const VERBOSE = process.argv.includes('--verbose');
+
+export const SESSION_IDLE_RESET_MINUTES = Math.max(
+  0,
+  parseInt(process.env.SESSION_IDLE_RESET_MINUTES || '0', 10) || 0,
+);
+
+export function isAgentDryRun(): boolean {
+  const v = process.env.TVCLAW_AGENT_DRY_RUN;
+  return v === '1' || v === 'true';
+}

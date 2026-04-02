@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Breakout</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 100vw; height: 100vh; overflow: hidden; background: #06070d; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W = 0, H = 0;
+function resize() {
+  canvas.width = W = window.innerWidth;
+  canvas.height = H = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (state !== 'playing') draw(); });
+
+const remoteUrl = `${location.protocol}//${location.host}/keypad`;
+const qrImg = new Image();
+qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(remoteUrl)}`;
+
+let state = 'idle';
+let score = 0, best = 0, lives = 3;
+let ticker = null;
+let moveLeft = false, moveRight = false;
+let paddleSpeed = 9;
+let speedBoost = false;
+let paddle, ball, bricks, rows, cols;
+
+function initRound() {
+  rows = 6;
+  cols = Math.max(8, Math.floor(W / 140));
+  paddle = { w: Math.max(130, W * 0.13), h: 20, x: W * 0.5 - 65, y: H - 60 };
+  ball = { x: W / 2, y: H - 95, vx: 5 * (Math.random() > 0.5 ? 1 : -1), vy: -5, r: 12, stuck: true };
+  bricks = [];
+  const margin = 48;
+  const top = 90;
+  const gap = 8;
+  const bw = (W - margin * 2 - gap * (cols - 1)) / cols;
+  const bh = 28;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      bricks.push({ x: margin + c * (bw + gap), y: top + r * (bh + gap), w: bw, h: bh, hp: 1 + (r > 3 ? 1 : 0) });
+    }
+  }
+}
+
+function startGame() {
+  state = 'playing';
+  score = 0;
+  lives = 3;
+  speedBoost = false;
+  initRound();
+  clearInterval(ticker);
+  ticker = setInterval(tick, 16);
+}
+
+function loseLife() {
+  lives--;
+  if (lives <= 0) {
+    endGame();
+    return;
+  }
+  ball.x = paddle.x + paddle.w / 2;
+  ball.y = paddle.y - 25;
+  ball.vx = 5 * (Math.random() > 0.5 ? 1 : -1);
+  ball.vy = -5;
+  ball.stuck = true;
+}
+
+function endGame() {
+  clearInterval(ticker);
+  if (score > best) best = score;
+  state = 'over';
+}
+
+function tick() {
+  const speed = speedBoost ? paddleSpeed + 4 : paddleSpeed;
+  if (moveLeft) paddle.x -= speed;
+  if (moveRight) paddle.x += speed;
+  if (paddle.x < 0) paddle.x = 0;
+  if (paddle.x + paddle.w > W) paddle.x = W - paddle.w;
+
+  if (ball.stuck) {
+    ball.x = paddle.x + paddle.w / 2;
+    ball.y = paddle.y - 24;
+    return;
+  }
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  if (ball.x - ball.r <= 0 || ball.x + ball.r >= W) ball.vx *= -1;
+  if (ball.y - ball.r <= 0) ball.vy *= -1;
+  if (ball.y - ball.r > H) {
+    loseLife();
+    return;
+  }
+
+  if (
+    ball.x + ball.r >= paddle.x &&
+    ball.x - ball.r <= paddle.x + paddle.w &&
+    ball.y + ball.r >= paddle.y &&
+    ball.y - ball.r <= paddle.y + paddle.h &&
+    ball.vy > 0
+  ) {
+    const impact = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+    ball.vx = impact * 8;
+    ball.vy = -Math.abs(ball.vy);
+  }
+
+  for (let i = 0; i < bricks.length; i++) {
+    const b = bricks[i];
+    if (
+      ball.x + ball.r > b.x &&
+      ball.x - ball.r < b.x + b.w &&
+      ball.y + ball.r > b.y &&
+      ball.y - ball.r < b.y + b.h
+    ) {
+      b.hp--;
+      if (b.hp <= 0) {
+        bricks.splice(i, 1);
+        score += 10;
+      } else {
+        score += 4;
+      }
+      ball.vy *= -1;
+      break;
+    }
+  }
+
+  if (bricks.length === 0) {
+    score += 100;
+    initRound();
+  }
+}
+
+function connectSse() {
+  const es = new EventSource('http://' + location.host + '/vibe-key-sse');
+  es.onerror = () => { es.close(); setTimeout(connectSse, 2000); };
+  es.onmessage = e => handleInput(e.data.trim().toLowerCase(), true);
+}
+connectSse();
+
+window.addEventListener('keydown', e => {
+  const map = { ArrowLeft: 'left', ArrowRight: 'right', Enter: 'start', ' ': 'a', Shift: 'b' };
+  const cmd = map[e.key];
+  if (!cmd) return;
+  e.preventDefault();
+  e.stopPropagation();
+  handleInput(cmd, true);
+}, true);
+
+window.addEventListener('keyup', e => {
+  const map = { ArrowLeft: 'left_up', ArrowRight: 'right_up', ' ': 'a_up', Shift: 'b_up' };
+  const cmd = map[e.key];
+  if (!cmd) return;
+  handleInput(cmd, false);
+}, true);
+
+function handleInput(cmd, down) {
+  if (cmd === 'start') {
+    if (state !== 'playing') startGame();
+    else if (ball.stuck) ball.stuck = false;
+    return;
+  }
+  if (state !== 'playing') return;
+  if (cmd === 'left') {
+    moveLeft = true;
+    moveRight = false;
+    const speed = speedBoost ? paddleSpeed + 4 : paddleSpeed;
+    paddle.x = Math.max(0, paddle.x - speed * 1.5);
+  }
+  if (cmd === 'right') {
+    moveRight = true;
+    moveLeft = false;
+    const speed = speedBoost ? paddleSpeed + 4 : paddleSpeed;
+    paddle.x = Math.min(W - paddle.w, paddle.x + speed * 1.5);
+  }
+  if (cmd === 'left_up') moveLeft = false;
+  if (cmd === 'right_up') moveRight = false;
+  if ((cmd === 'a' || cmd === 'b') && down) speedBoost = true;
+  if ((cmd === 'a_up' || cmd === 'b_up') && !down) speedBoost = false;
+  if ((cmd === 'a' || cmd === 'b' || cmd === 'x' || cmd === 'y') && ball.stuck) ball.stuck = false;
+}
+
+function loop() {
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function draw() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#090f20');
+  grad.addColorStop(1, '#070b17');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === 'idle') { drawIdle(); return; }
+  drawGame();
+  if (state === 'over') drawOver();
+}
+
+function drawGame() {
+  for (const b of bricks) {
+    ctx.fillStyle = b.hp === 2 ? '#8b5cf6' : '#22d3ee';
+    roundRect(b.x, b.y, b.w, b.h, 7);
+  }
+
+  ctx.fillStyle = '#38bdf8';
+  roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 8);
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = '22px monospace';
+  ctx.fillStyle = 'rgba(180,205,255,0.9)';
+  ctx.fillText('LIVES ' + lives, 18, 16);
+
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 30px monospace';
+  ctx.fillStyle = 'rgba(0,212,255,0.86)';
+  ctx.fillText(score, W - 20, 14);
+  if (best > 0 && best !== score) {
+    ctx.font = '20px monospace';
+    ctx.fillStyle = 'rgba(167,139,250,0.7)';
+    ctx.fillText('BEST ' + best, W - 20, 52);
+  }
+
+  if (ball.stuck && state === 'playing') {
+    ctx.textAlign = 'center';
+    ctx.font = '24px monospace';
+    ctx.fillStyle = 'rgba(180,200,255,0.72)';
+    ctx.fillText('Press START to launch', W / 2, H - 120);
+  }
+}
+
+function drawIdle() {
+  const qrSize = Math.max(180, Math.min(300, Math.floor(Math.min(W, H) * 0.27)));
+  const qrX = W / 2 - qrSize / 2;
+  const qrY = H / 2 - 46 - qrSize / 2;
+  ctx.fillStyle = 'rgba(10,14,28,0.9)';
+  roundRect(qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 18);
+  ctx.fillStyle = '#fff';
+  roundRect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16, 12);
+  if (qrImg.complete && qrImg.naturalWidth > 0) ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 68px monospace';
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillText('BREAKOUT', W / 2, qrY - 60);
+  ctx.font = '28px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.72)';
+  ctx.fillText('Scan to open gamepad on phone', W / 2, qrY + qrSize + 40);
+  ctx.font = '20px monospace';
+  ctx.fillStyle = 'rgba(140,165,245,0.78)';
+  ctx.fillText(remoteUrl, W / 2, qrY + qrSize + 74);
+  ctx.font = '24px monospace';
+  ctx.fillStyle = 'rgba(180,200,255,0.78)';
+  ctx.fillText('Then press START on the gamepad', W / 2, qrY + qrSize + 106);
+}
+
+function drawOver() {
+  ctx.fillStyle = 'rgba(6,7,13,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 62px monospace';
+  ctx.fillStyle = '#f43f5e';
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 70);
+  ctx.font = 'bold 46px monospace';
+  ctx.fillStyle = '#e0e8ff';
+  ctx.fillText(score, W / 2, H / 2);
+  ctx.font = '24px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.72)';
+  ctx.fillText('Press START to restart', W / 2, H / 2 + 92);
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+canvas.focus();
+</script>
+</body>
+</html>

@@ -12,7 +12,9 @@ import {
   MAX_MESSAGES_PER_PROMPT,
   ONECLI_URL,
   POLL_INTERVAL,
+  SESSION_IDLE_RESET_MINUTES,
   TIMEZONE,
+  isAgentDryRun,
 } from './config.js';
 import './channels/index.js';
 import {
@@ -50,11 +52,7 @@ import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
-import {
-  restoreRemoteControl,
-  startRemoteControl,
-  stopRemoteControl,
-} from './remote-control.js';
+import { getTvBridge } from './tv-bridge.js';
 import {
   isSenderAllowed,
   isTriggerAllowed,
@@ -179,8 +177,9 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
     }
   }
 
-  // Ensure a corresponding OneCLI agent exists (best-effort, non-blocking)
-  ensureOneCLIAgent(jid, group);
+  if (!isAgentDryRun()) {
+    ensureOneCLIAgent(jid, group);
+  }
 
   logger.info(
     { jid, name: group.name, folder: group.folder },
@@ -259,6 +258,24 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     missedMessages[missedMessages.length - 1].timestamp;
   saveState();
 
+  if (SESSION_IDLE_RESET_MINUTES > 0) {
+    const lastTs = lastAgentTimestamp[chatJid];
+    if (lastTs) {
+      const idleMs = Date.now() - new Date(lastTs).getTime();
+      if (idleMs > SESSION_IDLE_RESET_MINUTES * 60 * 1000) {
+        sessions[group.folder] = '';
+        setSession(group.folder, '');
+        logger.info(
+          {
+            group: group.name,
+            idleMinutes: (idleMs / 60000).toFixed(1),
+          },
+          'Session reset after idle',
+        );
+      }
+    }
+  }
+
   logger.info(
     { group: group.name, messageCount: missedMessages.length },
     'Processing messages',
@@ -289,8 +306,28 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         typeof result.result === 'string'
           ? result.result
           : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+      if (isMainGroup) {
+        const vibeMatch = raw.match(/<vibe-page>([\s\S]*?)<\/vibe-page>/);
+        if (vibeMatch) {
+          const html = (vibeMatch[1] ?? '').trim();
+          if (html) {
+            try {
+              const bridge = getTvBridge();
+              const url = bridge.addVibePage(html);
+              bridge.sendToAll('OPEN_URL', { url });
+              logger.info({ group: group.name }, 'Vibe page opened on TV');
+            } catch (err) {
+              logger.error(
+                { err, group: group.name },
+                'Failed to host vibe page for TV',
+              );
+            }
+          }
+        }
+      }
+      const text = formatOutbound(
+        raw.replace(/<vibe-page>[\s\S]*?<\/vibe-page>/g, ''),
+      );
       logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
       if (text) {
         await channel.sendMessage(chatJid, text);
@@ -444,7 +481,7 @@ async function startMessageLoop(): Promise<void> {
   }
   messageLoopRunning = true;
 
-  logger.info(`NanoClaw running (default trigger: ${DEFAULT_TRIGGER})`);
+  logger.info(`TVClaw (nanoclaw2) running (default trigger: ${DEFAULT_TRIGGER})`);
 
   while (true) {
     try {
@@ -568,22 +605,29 @@ function ensureContainerSystemRunning(): void {
 }
 
 async function main(): Promise<void> {
-  ensureContainerSystemRunning();
+  if (isAgentDryRun()) {
+    logger.warn(
+      'TVCLAW_AGENT_DRY_RUN: skipping Docker runtime check and OneCLI agent ensure',
+    );
+  } else {
+    ensureContainerSystemRunning();
+  }
   initDatabase();
   logger.info('Database initialized');
   loadState();
 
-  // Ensure OneCLI agents exist for all registered groups.
-  // Recovers from missed creates (e.g. OneCLI was down at registration time).
-  for (const [jid, group] of Object.entries(registeredGroups)) {
-    ensureOneCLIAgent(jid, group);
-  }
+  getTvBridge().start();
 
-  restoreRemoteControl();
+  if (!isAgentDryRun()) {
+    for (const [jid, group] of Object.entries(registeredGroups)) {
+      ensureOneCLIAgent(jid, group);
+    }
+  }
 
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
+    getTvBridge().stop();
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
@@ -591,60 +635,9 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  // Handle /remote-control and /remote-control-end commands
-  async function handleRemoteControl(
-    command: string,
-    chatJid: string,
-    msg: NewMessage,
-  ): Promise<void> {
-    const group = registeredGroups[chatJid];
-    if (!group?.isMain) {
-      logger.warn(
-        { chatJid, sender: msg.sender },
-        'Remote control rejected: not main group',
-      );
-      return;
-    }
-
-    const channel = findChannel(channels, chatJid);
-    if (!channel) return;
-
-    if (command === '/remote-control') {
-      const result = await startRemoteControl(
-        msg.sender,
-        chatJid,
-        process.cwd(),
-      );
-      if (result.ok) {
-        await channel.sendMessage(chatJid, result.url);
-      } else {
-        await channel.sendMessage(
-          chatJid,
-          `Remote Control failed: ${result.error}`,
-        );
-      }
-    } else {
-      const result = stopRemoteControl();
-      if (result.ok) {
-        await channel.sendMessage(chatJid, 'Remote Control session ended.');
-      } else {
-        await channel.sendMessage(chatJid, result.error);
-      }
-    }
-  }
-
   // Channel callbacks (shared by all channels)
   const channelOpts = {
     onMessage: (chatJid: string, msg: NewMessage) => {
-      // Remote control commands — intercept before storage
-      const trimmed = msg.content.trim();
-      if (trimmed === '/remote-control' || trimmed === '/remote-control-end') {
-        handleRemoteControl(trimmed, chatJid, msg).catch((err) =>
-          logger.error({ err, chatJid }, 'Remote control command error'),
-        );
-        return;
-      }
-
       // Sender allowlist drop mode: discard messages from denied senders before storing
       if (!msg.is_from_me && !msg.is_bot_message && registeredGroups[chatJid]) {
         const cfg = loadSenderAllowlist();

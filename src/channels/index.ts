@@ -9,4 +9,4 @@
 
 // telegram
 
-// whatsapp
+import './whatsapp.js';

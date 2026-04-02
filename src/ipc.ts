@@ -9,6 +9,7 @@ import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
+import { getTvBridge, parseTvIpcPayload } from './tv-bridge.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
@@ -63,6 +64,8 @@ export function startIpcWatcher(deps: IpcDeps): void {
       const isMain = folderIsMain.get(sourceGroup) === true;
       const messagesDir = path.join(ipcBaseDir, sourceGroup, 'messages');
       const tasksDir = path.join(ipcBaseDir, sourceGroup, 'tasks');
+      const tvDir = path.join(ipcBaseDir, sourceGroup, 'tv');
+      const vibeDir = path.join(ipcBaseDir, sourceGroup, 'vibe');
 
       // Process messages from this group's IPC directory
       try {
@@ -144,6 +147,126 @@ export function startIpcWatcher(deps: IpcDeps): void {
         }
       } catch (err) {
         logger.error({ err, sourceGroup }, 'Error reading IPC tasks directory');
+      }
+
+      try {
+        if (fs.existsSync(tvDir)) {
+          const tvFiles = fs
+            .readdirSync(tvDir)
+            .filter((f) => f.endsWith('.json'));
+          for (const file of tvFiles) {
+            const filePath = path.join(tvDir, file);
+            try {
+              const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+              if (data.type === 'tv_command' && data.payload != null) {
+                if (!isMain) {
+                  logger.warn(
+                    { sourceGroup },
+                    'tv_command IPC blocked (not main group)',
+                  );
+                } else {
+                  try {
+                    const parsed = parseTvIpcPayload(data.payload);
+                    let { action, params } = parsed;
+                    const bridge = getTvBridge();
+                    if (action === 'OPEN_URL') {
+                      if (!params.url) {
+                        logger.warn(
+                          { sourceGroup, action, params },
+                          'tv_command OPEN_URL missing url',
+                        );
+                      } else {
+                        const n = bridge.sendToAll(action, params);
+                        if (n === 0) {
+                          logger.warn(
+                            {
+                              sourceGroup,
+                              action,
+                              url: params.url,
+                            },
+                            'tv_command: no TVs connected',
+                          );
+                        } else {
+                          logger.info(
+                            {
+                              sourceGroup,
+                              action,
+                              url: params.url,
+                              tvs: n,
+                            },
+                            'tv_command sent to TVs',
+                          );
+                        }
+                      }
+                    } else {
+                      const n = bridge.sendToAll(action, params);
+                      if (n === 0) {
+                        logger.warn(
+                          { sourceGroup, action },
+                          'tv_command: no TVs connected',
+                        );
+                      } else {
+                        logger.info(
+                          { sourceGroup, action, tvs: n },
+                          'tv_command sent to TVs',
+                        );
+                      }
+                    }
+                  } catch (err) {
+                    logger.error(
+                      { err, sourceGroup },
+                      'invalid tv_command payload',
+                    );
+                  }
+                }
+              }
+              fs.unlinkSync(filePath);
+            } catch (err) {
+              logger.error(
+                { file, sourceGroup, err },
+                'Error processing IPC tv command',
+              );
+              const errorDir = path.join(ipcBaseDir, 'errors');
+              fs.mkdirSync(errorDir, { recursive: true });
+              fs.renameSync(
+                filePath,
+                path.join(errorDir, `${sourceGroup}-tv-${file}`),
+              );
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err, sourceGroup }, 'Error reading IPC tv directory');
+      }
+
+      if (isMain) {
+        try {
+          const pageFile = path.join(vibeDir, 'page.html');
+          if (fs.existsSync(pageFile)) {
+            try {
+              const html = fs.readFileSync(pageFile, 'utf8');
+              fs.unlinkSync(pageFile);
+              const bridge = getTvBridge();
+              const url = bridge.addVibePage(html);
+              const n = bridge.sendToAll('OPEN_URL', { url });
+              if (n === 0) {
+                logger.warn(
+                  { sourceGroup, url },
+                  'vibe page hosted but no TVs connected',
+                );
+              } else {
+                logger.info(
+                  { sourceGroup, url, tvs: n },
+                  'vibe page opened on TV',
+                );
+              }
+            } catch (err) {
+              logger.error({ err, sourceGroup }, 'Error processing vibe page');
+            }
+          }
+        } catch (err) {
+          logger.error({ err, sourceGroup }, 'Error reading vibe directory');
+        }
       }
     }
 

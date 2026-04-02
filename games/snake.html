@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Snake</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 100vw; height: 100vh; overflow: hidden; background: #06070d; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+// ── Sizing ──────────────────────────────────────────────
+const CELL = 28;
+let W, H, COLS, ROWS;
+
+function resize() {
+  canvas.width  = W = window.innerWidth;
+  canvas.height = H = window.innerHeight;
+  COLS = Math.floor(W / CELL);
+  ROWS = Math.floor(H / CELL);
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (state !== 'playing') draw(); });
+
+// ── State ────────────────────────────────────────────────
+let state     = 'idle';   // idle | playing | over
+let snake, dir, nextDir, food, score, highScore = 0, speed, ticker;
+let foodPulse = 0, lastTime = 0;
+const remoteUrl = `${location.protocol}//${location.host}/keypad`;
+const qrImg = new Image();
+qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(remoteUrl)}`;
+
+// ── SSE relay ────────────────────────────────────────────
+function connectSse() {
+  const es = new EventSource('http://' + location.host + '/vibe-key-sse');
+  es.onerror   = () => { es.close(); setTimeout(connectSse, 2000); };
+  es.onmessage = e => handleDir(e.data.trim().toLowerCase());
+}
+connectSse();
+
+window.addEventListener('keydown', e => {
+  const map = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right' };
+  if (map[e.key]) { e.preventDefault(); e.stopPropagation(); handleDir(map[e.key]); }
+}, true);
+
+function handleDir(cmd) {
+  if (state !== 'playing') { startGame(); return; }
+  if (cmd === 'up'    && dir.y !==  1) nextDir = {x:0,  y:-1};
+  if (cmd === 'down'  && dir.y !== -1) nextDir = {x:0,  y:1};
+  if (cmd === 'left'  && dir.x !==  1) nextDir = {x:-1, y:0};
+  if (cmd === 'right' && dir.x !== -1) nextDir = {x:1,  y:0};
+}
+
+// ── Game logic ───────────────────────────────────────────
+function startGame() {
+  state   = 'playing';
+  score   = 0;
+  speed   = 140;
+  const cx = Math.floor(COLS / 2), cy = Math.floor(ROWS / 2);
+  snake   = [{x:cx,y:cy},{x:cx-1,y:cy},{x:cx-2,y:cy},{x:cx-3,y:cy}];
+  dir     = {x:1, y:0};
+  nextDir = {x:1, y:0};
+  spawnFood();
+  clearInterval(ticker);
+  ticker = setInterval(tick, speed);
+}
+
+function spawnFood() {
+  let pos;
+  do { pos = {x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*ROWS)}; }
+  while (snake.some(s => s.x===pos.x && s.y===pos.y));
+  food = pos;
+}
+
+function tick() {
+  dir = {...nextDir};
+  const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
+
+  if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS) { endGame(); return; }
+  if (snake.slice(0,-1).some(s => s.x===head.x && s.y===head.y)) { endGame(); return; }
+
+  snake.unshift(head);
+  if (head.x===food.x && head.y===food.y) {
+    score++;
+    spawnFood();
+    if (score % 5 === 0) {
+      speed = Math.max(55, speed - 8);
+      clearInterval(ticker);
+      ticker = setInterval(tick, speed);
+    }
+  } else {
+    snake.pop();
+  }
+}
+
+function endGame() {
+  clearInterval(ticker);
+  if (score > highScore) highScore = score;
+  state = 'over';
+}
+
+// ── Render loop ──────────────────────────────────────────
+function loop(ts) {
+  foodPulse = (Math.sin(ts * 0.005) + 1) / 2;
+  if (ts - lastTime > 16) { draw(); lastTime = ts; }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function draw() {
+  // Background
+  ctx.fillStyle = '#06070d';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(20,35,70,0.6)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x*CELL,0); ctx.lineTo(x*CELL,H); ctx.stroke(); }
+  for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0,y*CELL); ctx.lineTo(W,y*CELL); ctx.stroke(); }
+
+  if (state === 'idle') { drawIdle(); return; }
+  if (state === 'over') { drawPlaying(); drawGameOver(); return; }
+  drawPlaying();
+}
+
+function drawPlaying() {
+  // Food
+  if (food) {
+    const fx = food.x * CELL + CELL/2;
+    const fy = food.y * CELL + CELL/2;
+    const fr = CELL * 0.38 + foodPulse * CELL * 0.1;
+    ctx.shadowColor = '#f43f5e';
+    ctx.shadowBlur  = 16 + foodPulse * 12;
+    ctx.fillStyle   = `hsl(${345 + foodPulse*15},90%,${58 + foodPulse*12}%)`;
+    ctx.beginPath(); ctx.arc(fx, fy, fr, 0, Math.PI*2); ctx.fill();
+    // inner highlight
+    ctx.shadowBlur = 0;
+    ctx.fillStyle  = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.arc(fx - fr*0.25, fy - fr*0.25, fr*0.3, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Snake
+  ctx.shadowBlur = 0;
+  const len = snake.length;
+  snake.forEach((seg, i) => {
+    const t = i / Math.max(len - 1, 1);
+    const r = CELL * 0.42 - t * CELL * 0.06;
+    const px = seg.x * CELL + CELL/2;
+    const py = seg.y * CELL + CELL/2;
+
+    // Glow on head and near-head
+    if (i < 4) {
+      ctx.shadowColor = '#00d4ff';
+      ctx.shadowBlur  = 18 - i * 3;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+
+    // Color: head cyan → tail dark teal
+    const l = Math.round(52 - t * 22);
+    ctx.fillStyle = i === 0 ? '#00eeff' : `hsl(192,${Math.round(100-t*30)}%,${l}%)`;
+    roundRect(px - r, py - r, r*2, r*2, r * 0.45);
+
+    // Eyes on head
+    if (i === 0) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle  = '#06070d';
+      const ex = dir.x * CELL * 0.18;
+      const ey = dir.y * CELL * 0.18;
+      const perp = CELL * 0.14;
+      const er = CELL * 0.1;
+      ctx.beginPath(); ctx.arc(px + ex + (dir.y!==0?perp:0), py + ey + (dir.x!==0?perp:0), er, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px + ex - (dir.y!==0?perp:0), py + ey - (dir.x!==0?perp:0), er, 0, Math.PI*2); ctx.fill();
+    }
+  });
+
+  ctx.shadowBlur = 0;
+
+  // Score (top-right)
+  ctx.textAlign    = 'right';
+  ctx.textBaseline = 'top';
+  ctx.font         = 'bold 32px monospace';
+  ctx.fillStyle    = 'rgba(0,212,255,0.15)';
+  ctx.fillText(score, W - 20, 16);
+  ctx.fillStyle = 'rgba(0,212,255,0.85)';
+  ctx.fillText(score, W - 22, 14);
+
+  if (highScore > 0 && highScore !== score) {
+    ctx.font      = '18px monospace';
+    ctx.fillStyle = 'rgba(167,139,250,0.5)';
+    ctx.fillText('BEST ' + highScore, W - 22, 52);
+  }
+}
+
+function drawIdle() {
+  const qrSize = Math.max(180, Math.min(300, Math.floor(Math.min(W, H) * 0.27)));
+  const qrX = W / 2 - qrSize / 2;
+  const qrY = H / 2 - 50 - qrSize / 2;
+
+  ctx.fillStyle = 'rgba(10,14,28,0.9)';
+  roundRect(qrX - 18, qrY - 18, qrSize + 36, qrSize + 36, 18);
+  ctx.fillStyle = '#ffffff';
+  roundRect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16, 12);
+  if (qrImg.complete && qrImg.naturalWidth > 0) {
+    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+  }
+
+  // Title
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor  = '#00d4ff';
+  ctx.shadowBlur   = 30;
+  ctx.font         = 'bold 72px monospace';
+  ctx.fillStyle    = '#00d4ff';
+  ctx.fillText('SNAKE', W/2, qrY - 58);
+
+  ctx.shadowBlur = 0;
+  ctx.font       = '28px monospace';
+  ctx.fillStyle  = 'rgba(160,180,255,0.7)';
+  ctx.fillText('Scan to open gamepad on phone', W/2, qrY + qrSize + 42);
+
+  ctx.font       = '20px monospace';
+  ctx.fillStyle  = 'rgba(140,165,245,0.78)';
+  ctx.fillText(remoteUrl, W/2, qrY + qrSize + 76);
+
+  ctx.font       = '24px monospace';
+  ctx.fillStyle  = 'rgba(180,200,255,0.78)';
+  ctx.fillText('Then press START on the gamepad', W/2, qrY + qrSize + 108);
+
+  if (highScore > 0) {
+    ctx.font      = '22px monospace';
+    ctx.fillStyle = 'rgba(167,139,250,0.65)';
+    ctx.fillText('BEST  ' + highScore, W/2, qrY + qrSize + 142);
+  }
+}
+
+function drawGameOver() {
+  // Dim overlay
+  ctx.fillStyle = 'rgba(6,7,13,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  // GAME OVER
+  ctx.shadowColor = '#f43f5e';
+  ctx.shadowBlur  = 30;
+  ctx.font        = 'bold 64px monospace';
+  ctx.fillStyle   = '#f43f5e';
+  ctx.fillText('GAME OVER', W/2, H/2 - 80);
+
+  ctx.shadowBlur = 0;
+
+  // Score
+  ctx.font      = 'bold 48px monospace';
+  ctx.fillStyle = '#e0e8ff';
+  ctx.fillText(score, W/2, H/2);
+
+  // Record badge
+  if (score > 0 && score === highScore) {
+    ctx.font      = '22px monospace';
+    ctx.fillStyle = '#a78bfa';
+    ctx.shadowColor = '#a78bfa';
+    ctx.shadowBlur  = 12;
+    ctx.fillText('✦ NEW RECORD ✦', W/2, H/2 + 52);
+    ctx.shadowBlur = 0;
+  }
+
+  // Restart hint
+  ctx.font      = '24px monospace';
+  ctx.fillStyle = 'rgba(160,180,255,0.6)';
+  ctx.fillText('Press any direction to restart', W/2, H/2 + 110);
+}
+
+// ── Helpers ──────────────────────────────────────────────
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+canvas.focus();
+</script>
+</body>
+</html>

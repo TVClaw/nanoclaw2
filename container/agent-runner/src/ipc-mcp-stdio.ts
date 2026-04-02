@@ -14,6 +14,7 @@ import { CronExpressionParser } from 'cron-parser';
 const IPC_DIR = '/workspace/ipc';
 const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
+const TV_DIR = path.join(IPC_DIR, 'tv');
 
 // Context from environment variables (set by the agent runner)
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
@@ -64,6 +65,208 @@ server.tool(
     writeIpcFile(MESSAGES_DIR, data);
 
     return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
+  },
+);
+
+const tvMediaControl = z.enum([
+  'PLAY',
+  'PAUSE',
+  'REWIND_30',
+  'FAST_FORWARD_30',
+  'MUTE',
+  'HOME',
+  'BACK',
+]);
+
+const tvKeyCode = z.enum([
+  'DPAD_UP',
+  'DPAD_DOWN',
+  'DPAD_LEFT',
+  'DPAD_RIGHT',
+  'DPAD_CENTER',
+  'ENTER',
+  'BACK',
+  'HOME',
+  'MENU',
+  'CHANNEL_UP',
+  'CHANNEL_DOWN',
+  'VOLUME_UP',
+  'VOLUME_DOWN',
+]);
+
+const tvActionEnum = z.enum([
+  'LAUNCH_APP',
+  'OPEN_URL',
+  'MEDIA_CONTROL',
+  'KEY_EVENT',
+  'SHOW_TOAST',
+  'SEARCH',
+  'UNIVERSAL_SEARCH',
+  'SLEEP_TIMER',
+]);
+
+const sendTvCommandInput = z
+  .object({
+    action: tvActionEnum,
+    app_id: z.string().optional(),
+    url: z.string().optional(),
+    control: tvMediaControl.optional(),
+    keycode: tvKeyCode.optional(),
+    message: z.string().optional(),
+    query: z.string().optional(),
+    minutes: z.number().int().positive().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const need = (field: string, ok: boolean) => {
+      if (!ok) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${field} required for action ${data.action}`,
+          path: [field],
+        });
+      }
+    };
+    switch (data.action) {
+      case 'LAUNCH_APP':
+        need('app_id', !!data.app_id?.trim());
+        break;
+      case 'OPEN_URL':
+        need(
+          'url or game',
+          !!(data.url?.trim() || data.game),
+        );
+        break;
+      case 'MEDIA_CONTROL':
+        need('control', data.control != null);
+        break;
+      case 'KEY_EVENT':
+        need('keycode', data.keycode != null);
+        break;
+      case 'SHOW_TOAST':
+        need('message', !!data.message?.trim());
+        break;
+      case 'SEARCH':
+        need('app_id', !!data.app_id?.trim());
+        need('query', !!data.query?.trim());
+        break;
+      case 'UNIVERSAL_SEARCH':
+        need('query', !!data.query?.trim());
+        break;
+      case 'SLEEP_TIMER':
+        need('minutes', data.minutes != null);
+        break;
+      default:
+        break;
+    }
+  });
+
+type SendTvArgs = z.infer<typeof sendTvCommandInput>;
+
+function tvPayloadFromArgs(args: SendTvArgs): {
+  action: string;
+  params: Record<string, unknown>;
+} {
+  switch (args.action) {
+    case 'LAUNCH_APP':
+      return { action: 'LAUNCH_APP', params: { app_id: args.app_id! } };
+    case 'OPEN_URL':
+      return {
+        action: 'OPEN_URL',
+        params: {
+          url: args.url!,
+          ...(args.app_id ? { app_id: args.app_id } : {}),
+        },
+      };
+    case 'MEDIA_CONTROL':
+      return { action: 'MEDIA_CONTROL', params: { control: args.control! } };
+    case 'KEY_EVENT':
+      return { action: 'KEY_EVENT', params: { keycode: args.keycode! } };
+    case 'SHOW_TOAST':
+      return { action: 'SHOW_TOAST', params: { message: args.message! } };
+    case 'SEARCH':
+      return {
+        action: 'SEARCH',
+        params: { app_id: args.app_id!, query: args.query! },
+      };
+    case 'UNIVERSAL_SEARCH':
+      return { action: 'UNIVERSAL_SEARCH', params: { query: args.query! } };
+    case 'SLEEP_TIMER':
+      return { action: 'SLEEP_TIMER', params: { value: args.minutes! } };
+    default: {
+      const _x: never = args.action;
+      throw new Error(`unknown action ${_x}`);
+    }
+  }
+}
+
+server.tool(
+  'send_tv_command',
+  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app.`,
+  sendTvCommandInput.shape,
+  async (args) => {
+    const parsed = sendTvCommandInput.safeParse(args);
+    if (!parsed.success) {
+      const msg = parsed.error.issues.map((i) => i.message).join('; ');
+      return {
+        content: [{ type: 'text' as const, text: msg || 'Invalid arguments' }],
+        isError: true,
+      };
+    }
+
+    let tvArgs = parsed.data;
+    if (tvArgs.action === 'OPEN_URL') {
+      const origin = (process.env.NANOCLAW_TV_HTTP_ORIGIN ?? '').replace(
+        /\/$/,
+        '',
+      );
+      let url = tvArgs.url?.trim() ?? '';
+      if (url && origin && !/^https?:\/\//i.test(url)) {
+        url = `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      if (!url.trim()) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                'OPEN_URL: set url to a full http(s) URL, or use game=snake|tetris|pong|breakout|flappy (needs NANOCLAW_TV_HTTP_ORIGIN in the container).',
+            },
+          ],
+          isError: true,
+        };
+      }
+      tvArgs = { ...tvArgs, url };
+    }
+
+    if (!isMain) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Only the main group can send TV commands.',
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const { action, params } = tvPayloadFromArgs(tvArgs);
+    const data = {
+      type: 'tv_command',
+      payload: { action, params },
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+    writeIpcFile(TV_DIR, data);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `TV command queued: ${action}`,
+        },
+      ],
+    };
   },
 );
 
