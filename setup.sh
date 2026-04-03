@@ -82,10 +82,16 @@ install_deps() {
   log "Running npm ci $npm_flags"
   if npm ci $npm_flags >> "$LOG_FILE" 2>&1; then
     DEPS_OK="true"
-    log "npm install succeeded"
+    log "npm ci succeeded"
   else
-    log "npm install failed"
-    return
+    log "npm ci failed, running npm install"
+    if npm install $npm_flags >> "$LOG_FILE" 2>&1; then
+      DEPS_OK="true"
+      log "npm install succeeded"
+    else
+      log "npm install failed"
+      return
+    fi
   fi
 
   # Verify native module (better-sqlite3)
