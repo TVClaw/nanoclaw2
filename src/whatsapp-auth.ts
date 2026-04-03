@@ -31,7 +31,10 @@ function openQrInBrowser(qrPayload: string): void {
     const QRCode = QRMod.default as {
       toDataURL: (s: string, o?: object) => Promise<string>;
     };
-    const dataUrl = await QRCode.toDataURL(qrPayload, { margin: 2, width: 512 });
+    const dataUrl = await QRCode.toDataURL(qrPayload, {
+      margin: 2,
+      width: 512,
+    });
     const htmlPath = path.join(process.cwd(), 'store', 'whatsapp-qr.html');
     fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
     fs.writeFileSync(
