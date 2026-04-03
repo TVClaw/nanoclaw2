@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
@@ -21,7 +22,34 @@ const logger = pino({
 });
 
 const usePairingCode = process.argv.includes('--pairing-code');
+const useBrowserQr = process.argv.includes('--browser-qr');
 const phoneArg = process.argv.find((_, i, arr) => arr[i - 1] === '--phone');
+
+function openQrInBrowser(qrPayload: string): void {
+  void (async () => {
+    const QRMod = await import('qrcode');
+    const QRCode = QRMod.default as {
+      toDataURL: (s: string, o?: object) => Promise<string>;
+    };
+    const dataUrl = await QRCode.toDataURL(qrPayload, { margin: 2, width: 512 });
+    const htmlPath = path.join(process.cwd(), 'store', 'whatsapp-qr.html');
+    fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
+    fs.writeFileSync(
+      htmlPath,
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>WhatsApp TVClaw</title></head><body style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;padding:24px"><h1>Scan with WhatsApp</h1><p>Settings → Linked Devices → Link a device</p><img alt="QR" src="${dataUrl}" width="512" height="512"/></body></html>`,
+    );
+    const abs = path.resolve(htmlPath);
+    try {
+      if (process.platform === 'darwin') {
+        execFileSync('open', [abs], { stdio: 'ignore' });
+      } else if (process.platform !== 'win32') {
+        execFileSync('xdg-open', [abs], { stdio: 'ignore' });
+      }
+    } catch {
+      /* ignore */
+    }
+  })();
+}
 
 function askQuestion(prompt: string): Promise<string> {
   const rl = readline.createInterface({
@@ -96,6 +124,9 @@ async function connectSocket(
       console.log('  1. Open WhatsApp on your phone');
       console.log('  2. Tap Settings → Linked Devices → Link a Device');
       console.log('  3. Point your camera at the QR code below\n');
+      if (useBrowserQr) {
+        openQrInBrowser(qr);
+      }
       qrcode.generate(qr, { small: true });
     }
 
@@ -126,6 +157,11 @@ async function connectSocket(
       fs.writeFileSync(STATUS_FILE, 'authenticated');
       try {
         fs.unlinkSync(QR_FILE);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.unlinkSync(path.join(process.cwd(), 'store', 'whatsapp-qr.html'));
       } catch {
         /* ignore */
       }
