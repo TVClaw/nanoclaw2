@@ -36,7 +36,10 @@ function splitChunks(s: string, max: number): string[] {
 
 async function waitOpen(sock: ReturnType<typeof makeWASocket>): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('WhatsApp connection timeout')), 120_000);
+    const t = setTimeout(
+      () => reject(new Error('WhatsApp connection timeout')),
+      120_000,
+    );
     sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
       if (connection === 'close') {
         const reason = (

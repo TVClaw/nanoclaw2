@@ -612,10 +612,7 @@ function ensureContainerSystemRunning(): void {
 }
 
 async function main(): Promise<void> {
-  logger.info(
-    { cwd: process.cwd(), node: process.version },
-    'nanoclaw start',
-  );
+  logger.info({ cwd: process.cwd(), node: process.version }, 'nanoclaw start');
   if (isAgentDryRun()) {
     logger.warn(
       'TVCLAW_AGENT_DRY_RUN: skipping Docker runtime check and OneCLI agent ensure',

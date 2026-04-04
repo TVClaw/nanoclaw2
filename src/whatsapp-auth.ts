@@ -136,7 +136,9 @@ async function connectSocket(
       if (!qrBannerPrinted) {
         qrBannerPrinted = true;
         console.log('Link WhatsApp to TVClaw — scan the code below.\n');
-        console.log('  On your phone: Settings → Linked devices → Link a device');
+        console.log(
+          '  On your phone: Settings → Linked devices → Link a device',
+        );
         if (useBrowserQr) {
           console.log(
             '  A browser page opens once with a large code; it updates on refresh if the code expires.\n',
@@ -189,11 +191,19 @@ async function connectSocket(
       } catch {
         /* ignore */
       }
-      console.log('\n✓ WhatsApp on your phone is now linked to TVClaw on this computer.');
+      console.log(
+        '\n✓ WhatsApp on your phone is now linked to TVClaw on this computer.',
+      );
       console.log('');
-      console.log('  What happens next: the setup will create (or open) your “TVClaw” chat in WhatsApp');
-      console.log('  and finish connecting it. If you are using the TVClaw installer, just wait — it continues');
-      console.log('  on its own. If you ran this step alone, run:  tvclaw link-whatsapp');
+      console.log(
+        '  What happens next: the setup will create (or open) your “TVClaw” chat in WhatsApp',
+      );
+      console.log(
+        '  and finish connecting it. If you are using the TVClaw installer, just wait — it continues',
+      );
+      console.log(
+        '  on its own. If you ran this step alone, run:  tvclaw link-whatsapp',
+      );
       console.log('');
       setTimeout(() => process.exit(0), 1000);
     }

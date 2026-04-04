@@ -188,9 +188,7 @@ export class TvBridge {
     const fn = this.tvWelcomeNotifier;
     if (!fn) return;
     try {
-      void Promise.resolve(
-        fn({ host: t.host, port: t.port, key: t.key }),
-      );
+      void Promise.resolve(fn({ host: t.host, port: t.port, key: t.key }));
     } catch {
       /* ignore */
     }
