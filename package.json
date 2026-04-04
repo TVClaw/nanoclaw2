@@ -18,6 +18,7 @@
     "auth": "tsx src/whatsapp-auth.ts",
     "auth:ai": "tsx src/setup-ai-auth.ts",
     "link:whatsapp": "tsx src/whatsapp-bootstrap-tvclaw.ts",
+    "whatsapp:apk-followup": "tsx src/whatsapp-apk-followup.ts",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",

@@ -10,7 +10,7 @@ import path from 'path';
 
 // Helper: generate a plist string the same way service.ts does
 function generatePlist(
-  nodePath: string,
+  npmPath: string,
   projectRoot: string,
   homeDir: string,
 ): string {
@@ -22,8 +22,8 @@ function generatePlist(
     <string>com.nanoclaw</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${nodePath}</string>
-        <string>${projectRoot}/dist/index.js</string>
+        <string>${npmPath}</string>
+        <string>start</string>
     </array>
     <key>WorkingDirectory</key>
     <string>${projectRoot}</string>
@@ -47,7 +47,7 @@ function generatePlist(
 }
 
 function generateSystemdUnit(
-  nodePath: string,
+  npmPath: string,
   projectRoot: string,
   homeDir: string,
   isSystem: boolean,
@@ -58,7 +58,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${nodePath} ${projectRoot}/dist/index.js
+ExecStart=${npmPath} start
 WorkingDirectory=${projectRoot}
 Restart=always
 RestartSec=5
@@ -75,34 +75,26 @@ WantedBy=${isSystem ? 'multi-user.target' : 'default.target'}`;
 describe('plist generation', () => {
   it('contains the correct label', () => {
     const plist = generatePlist(
-      '/usr/local/bin/node',
+      '/usr/local/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
     );
     expect(plist).toContain('<string>com.nanoclaw</string>');
   });
 
-  it('uses the correct node path', () => {
+  it('uses npm start', () => {
     const plist = generatePlist(
-      '/opt/node/bin/node',
+      '/opt/homebrew/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
     );
-    expect(plist).toContain('<string>/opt/node/bin/node</string>');
-  });
-
-  it('points to dist/index.js', () => {
-    const plist = generatePlist(
-      '/usr/local/bin/node',
-      '/home/user/nanoclaw',
-      '/home/user',
-    );
-    expect(plist).toContain('/home/user/nanoclaw/dist/index.js');
+    expect(plist).toContain('<string>/opt/homebrew/bin/npm</string>');
+    expect(plist).toContain('<string>start</string>');
   });
 
   it('sets log paths', () => {
     const plist = generatePlist(
-      '/usr/local/bin/node',
+      '/usr/local/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
     );
@@ -114,7 +106,7 @@ describe('plist generation', () => {
 describe('systemd unit generation', () => {
   it('user unit uses default.target', () => {
     const unit = generateSystemdUnit(
-      '/usr/bin/node',
+      '/usr/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
       false,
@@ -124,7 +116,7 @@ describe('systemd unit generation', () => {
 
   it('system unit uses multi-user.target', () => {
     const unit = generateSystemdUnit(
-      '/usr/bin/node',
+      '/usr/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
       true,
@@ -134,7 +126,7 @@ describe('systemd unit generation', () => {
 
   it('contains restart policy', () => {
     const unit = generateSystemdUnit(
-      '/usr/bin/node',
+      '/usr/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
       false,
@@ -145,7 +137,7 @@ describe('systemd unit generation', () => {
 
   it('uses KillMode=process to preserve detached children', () => {
     const unit = generateSystemdUnit(
-      '/usr/bin/node',
+      '/usr/bin/npm',
       '/home/user/nanoclaw',
       '/home/user',
       false,
@@ -155,33 +147,31 @@ describe('systemd unit generation', () => {
 
   it('sets correct ExecStart', () => {
     const unit = generateSystemdUnit(
-      '/usr/bin/node',
+      '/usr/bin/npm',
       '/srv/nanoclaw',
       '/home/user',
       false,
     );
-    expect(unit).toContain(
-      'ExecStart=/usr/bin/node /srv/nanoclaw/dist/index.js',
-    );
+    expect(unit).toContain('ExecStart=/usr/bin/npm start');
   });
 });
 
 describe('WSL nohup fallback', () => {
   it('generates a valid wrapper script', () => {
     const projectRoot = '/home/user/nanoclaw';
-    const nodePath = '/usr/bin/node';
+    const npmPath = '/usr/bin/npm';
     const pidFile = path.join(projectRoot, 'nanoclaw.pid');
 
-    // Simulate what service.ts generates
     const wrapper = `#!/bin/bash
 set -euo pipefail
 cd ${JSON.stringify(projectRoot)}
-nohup ${JSON.stringify(nodePath)} ${JSON.stringify(projectRoot)}/dist/index.js >> ${JSON.stringify(projectRoot)}/logs/nanoclaw.log 2>> ${JSON.stringify(projectRoot)}/logs/nanoclaw.error.log &
+nohup ${JSON.stringify(npmPath)} start >> ${JSON.stringify(projectRoot)}/logs/nanoclaw.log 2>> ${JSON.stringify(projectRoot)}/logs/nanoclaw.error.log &
 echo $! > ${JSON.stringify(pidFile)}`;
 
     expect(wrapper).toContain('#!/bin/bash');
     expect(wrapper).toContain('nohup');
-    expect(wrapper).toContain(nodePath);
+    expect(wrapper).toContain(npmPath);
+    expect(wrapper).toContain(' start ');
     expect(wrapper).toContain('nanoclaw.pid');
   });
 });

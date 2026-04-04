@@ -38,6 +38,7 @@ import {
   deleteSession,
   getAllTasks,
   getLastBotMessageTimestamp,
+  getMainRegisteredGroupJid,
   getMessagesSince,
   getNewMessages,
   getRouterState,
@@ -51,7 +52,12 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
-import { findChannel, formatMessages, formatOutbound } from './router.js';
+import {
+  findChannel,
+  formatMessages,
+  formatOutbound,
+  routeOutbound,
+} from './router.js';
 import { getTvBridge } from './tv-bridge.js';
 import {
   isSenderAllowed,
@@ -606,6 +612,10 @@ function ensureContainerSystemRunning(): void {
 }
 
 async function main(): Promise<void> {
+  logger.info(
+    { cwd: process.cwd(), node: process.version },
+    'nanoclaw start',
+  );
   if (isAgentDryRun()) {
     logger.warn(
       'TVCLAW_AGENT_DRY_RUN: skipping Docker runtime check and OneCLI agent ensure',
@@ -616,8 +626,6 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
   loadState();
-
-  getTvBridge().start();
 
   if (!isAgentDryRun()) {
     for (const [jid, group] of Object.entries(registeredGroups)) {
@@ -687,6 +695,43 @@ async function main(): Promise<void> {
     logger.fatal('No channels connected');
     process.exit(1);
   }
+
+  const pickTvConnectNotifyJid = (): string | null => {
+    const main = getMainRegisteredGroupJid();
+    if (main) {
+      return main;
+    }
+    const all = getAllRegisteredGroups();
+    const jids = Object.keys(all);
+    for (const jid of jids) {
+      if (all[jid]?.folder === 'main') {
+        return jid;
+      }
+    }
+    return jids[0] ?? null;
+  };
+
+  getTvBridge().setTvWelcomeNotifier(async ({ host, port }) => {
+    logger.info(
+      { host, port },
+      'TV client connected (brain outbound WebSocket to TV is up)',
+    );
+    const jid = pickTvConnectNotifyJid();
+    if (!jid) {
+      logger.warn(
+        'TV connected but no registered WhatsApp group JID — link:whatsapp / main group missing in DB',
+      );
+      return;
+    }
+    const line = `📺 TVClaw: your Android TV app connected to this brain at ${host}:${port}. You can control the TV from this group.`;
+    try {
+      await routeOutbound(channels, jid, line);
+    } catch (err) {
+      logger.warn({ err }, 'Could not send TV-connected notice to WhatsApp');
+    }
+  });
+
+  getTvBridge().start();
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({

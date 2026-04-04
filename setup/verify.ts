@@ -165,16 +165,47 @@ export async function run(_args: string[]): Promise<void> {
     mountAllowlist = 'configured';
   }
 
-  // Determine overall status
-  const status =
+  const fullSuccess =
     service === 'running' &&
     credentials !== 'missing' &&
     anyChannelConfigured &&
-    registeredGroups > 0
-      ? 'success'
-      : 'failed';
+    registeredGroups > 0;
+
+  const status = fullSuccess ? 'success' : 'failed';
 
   logger.info({ status, channelAuth }, 'Verification complete');
+
+  const installer = process.env.TVCLAW_INSTALLER === '1';
+
+  if (installer) {
+    if (containerRuntime === 'none') {
+      emitStatus('VERIFY', {
+        SERVICE: service,
+        CONTAINER_RUNTIME: containerRuntime,
+        CREDENTIALS: credentials,
+        CONFIGURED_CHANNELS: configuredChannels.join(','),
+        CHANNEL_AUTH: JSON.stringify(channelAuth),
+        REGISTERED_GROUPS: registeredGroups,
+        MOUNT_ALLOWLIST: mountAllowlist,
+        STATUS: 'failed',
+        LOG: 'logs/setup.log',
+      });
+      process.exit(1);
+    }
+    const displayStatus = fullSuccess ? 'success' : 'in_progress';
+    emitStatus('VERIFY', {
+      SERVICE: service,
+      CONTAINER_RUNTIME: containerRuntime,
+      CREDENTIALS: credentials,
+      CONFIGURED_CHANNELS: configuredChannels.join(','),
+      CHANNEL_AUTH: JSON.stringify(channelAuth),
+      REGISTERED_GROUPS: registeredGroups,
+      MOUNT_ALLOWLIST: mountAllowlist,
+      STATUS: displayStatus,
+      LOG: 'logs/setup.log',
+    });
+    process.exit(0);
+  }
 
   emitStatus('VERIFY', {
     SERVICE: service,

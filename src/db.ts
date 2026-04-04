@@ -689,6 +689,16 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
   return result;
 }
 
+export function getMainRegisteredGroupJid(): string | null {
+  const all = getAllRegisteredGroups();
+  for (const [jid, g] of Object.entries(all)) {
+    if (g.isMain === true) {
+      return jid;
+    }
+  }
+  return null;
+}
+
 // --- JSON migration ---
 
 function migrateJsonState(): void {

@@ -17,6 +17,7 @@ import {
   ASSISTANT_HAS_OWN_NUMBER,
   ASSISTANT_NAME,
   DEFAULT_TRIGGER,
+  MACOS_DESKTOP_NOTIFY,
   STORE_DIR,
   getTriggerPattern,
 } from '../config.js';
@@ -49,6 +50,7 @@ export class WhatsAppChannel implements Channel {
   private outgoingQueue: Array<{ jid: string; text: string }> = [];
   private flushing = false;
   private groupSyncTimerStarted = false;
+  private qrMacNotified = false;
 
   private opts: WhatsAppChannelOpts;
 
@@ -93,9 +95,17 @@ export class WhatsAppChannel implements Channel {
         const msg =
           'WhatsApp authentication required. Run npm run auth or /setup.';
         logger.error(msg);
-        exec(
-          `osascript -e 'display notification "${msg}" with title "TVClaw" sound name "Basso"'`,
-        );
+        if (
+          MACOS_DESKTOP_NOTIFY &&
+          process.platform === 'darwin' &&
+          !this.qrMacNotified
+        ) {
+          this.qrMacNotified = true;
+          const safe = msg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          exec(
+            `osascript -e 'display notification "${safe}" with title "TVClaw"'`,
+          );
+        }
         setTimeout(() => process.exit(1), 1000);
       }
 

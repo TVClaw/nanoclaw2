@@ -98,6 +98,8 @@ export const TIMEZONE = resolveConfigTimezone();
 
 export const VERBOSE = process.argv.includes('--verbose');
 
+export const MACOS_DESKTOP_NOTIFY = process.env.TVCLAW_MACOS_NOTIFY === '1';
+
 export const SESSION_IDLE_RESET_MINUTES = Math.max(
   0,
   parseInt(process.env.SESSION_IDLE_RESET_MINUTES || '0', 10) || 0,

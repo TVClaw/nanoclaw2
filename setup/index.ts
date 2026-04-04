@@ -52,6 +52,9 @@ async function main(): Promise<void> {
       STATUS: 'failed',
       ERROR: message,
     });
+    if (process.env.TVCLAW_SETUP_UI === '1') {
+      console.error(`✗ Setup step “${stepName}” failed: ${message}`);
+    }
     process.exit(1);
   }
 }

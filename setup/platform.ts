@@ -106,6 +106,14 @@ export function getNodePath(): string {
   }
 }
 
+export function getNpmPath(): string {
+  try {
+    return execSync('command -v npm', { encoding: 'utf-8' }).trim();
+  } catch {
+    return 'npm';
+  }
+}
+
 export function commandExists(name: string): boolean {
   try {
     execSync(`command -v ${name}`, { stdio: 'ignore' });

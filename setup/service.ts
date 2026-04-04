@@ -13,6 +13,7 @@ import { logger } from '../src/logger.js';
 import {
   getPlatform,
   getNodePath,
+  getNpmPath,
   getServiceManager,
   hasSystemd,
   isRoot,
@@ -24,9 +25,10 @@ export async function run(_args: string[]): Promise<void> {
   const projectRoot = process.cwd();
   const platform = getPlatform();
   const nodePath = getNodePath();
+  const npmPath = getNpmPath();
   const homeDir = os.homedir();
 
-  logger.info({ platform, nodePath, projectRoot }, 'Setting up service');
+  logger.info({ platform, nodePath, npmPath, projectRoot }, 'Setting up service');
 
   // Build first
   logger.info('Building TypeScript');
@@ -52,9 +54,9 @@ export async function run(_args: string[]): Promise<void> {
   fs.mkdirSync(path.join(projectRoot, 'logs'), { recursive: true });
 
   if (platform === 'macos') {
-    setupLaunchd(projectRoot, nodePath, homeDir);
+    setupLaunchd(projectRoot, npmPath, homeDir, nodePath);
   } else if (platform === 'linux') {
-    setupLinux(projectRoot, nodePath, homeDir);
+    setupLinux(projectRoot, npmPath, homeDir, nodePath);
   } else {
     emitStatus('SETUP_SERVICE', {
       SERVICE_TYPE: 'unknown',
@@ -68,10 +70,21 @@ export async function run(_args: string[]): Promise<void> {
   }
 }
 
+function servicePathEnv(homeDir: string): string {
+  return [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    path.join(homeDir, '.local', 'bin'),
+  ].join(':');
+}
+
 function setupLaunchd(
   projectRoot: string,
-  nodePath: string,
+  npmPath: string,
   homeDir: string,
+  nodePath: string,
 ): void {
   const plistPath = path.join(
     homeDir,
@@ -81,6 +94,7 @@ function setupLaunchd(
   );
   fs.mkdirSync(path.dirname(plistPath), { recursive: true });
 
+  const pathEnv = servicePathEnv(homeDir);
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -89,8 +103,8 @@ function setupLaunchd(
     <string>com.nanoclaw</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${nodePath}</string>
-        <string>${projectRoot}/dist/index.js</string>
+        <string>${npmPath}</string>
+        <string>start</string>
     </array>
     <key>WorkingDirectory</key>
     <string>${projectRoot}</string>
@@ -101,7 +115,7 @@ function setupLaunchd(
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
+        <string>${pathEnv}</string>
         <key>HOME</key>
         <string>${homeDir}</string>
     </dict>
@@ -146,16 +160,16 @@ function setupLaunchd(
 
 function setupLinux(
   projectRoot: string,
-  nodePath: string,
+  npmPath: string,
   homeDir: string,
+  nodePath: string,
 ): void {
   const serviceManager = getServiceManager();
 
   if (serviceManager === 'systemd') {
-    setupSystemd(projectRoot, nodePath, homeDir);
+    setupSystemd(projectRoot, npmPath, homeDir, nodePath);
   } else {
-    // WSL without systemd or other Linux without systemd
-    setupNohupFallback(projectRoot, nodePath, homeDir);
+    setupNohupFallback(projectRoot, npmPath, nodePath);
   }
 }
 
@@ -203,8 +217,9 @@ function checkDockerGroupStale(): boolean {
 
 function setupSystemd(
   projectRoot: string,
-  nodePath: string,
+  npmPath: string,
   homeDir: string,
+  nodePath: string,
 ): void {
   const runningAsRoot = isRoot();
 
@@ -224,7 +239,7 @@ function setupSystemd(
       logger.warn(
         'systemd user session not available — falling back to nohup wrapper',
       );
-      setupNohupFallback(projectRoot, nodePath, homeDir);
+      setupNohupFallback(projectRoot, npmPath, nodePath);
       return;
     }
     const unitDir = path.join(homeDir, '.config', 'systemd', 'user');
@@ -233,19 +248,20 @@ function setupSystemd(
     systemctlPrefix = 'systemctl --user';
   }
 
+  const pathEnv = servicePathEnv(homeDir);
   const unit = `[Unit]
 Description=NanoClaw Personal Assistant
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${nodePath} ${projectRoot}/dist/index.js
+ExecStart=${npmPath} start
 WorkingDirectory=${projectRoot}
 Restart=always
 RestartSec=5
 KillMode=process
 Environment=HOME=${homeDir}
-Environment=PATH=/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin
+Environment=PATH=${pathEnv}
 StandardOutput=append:${projectRoot}/logs/nanoclaw.log
 StandardError=append:${projectRoot}/logs/nanoclaw.error.log
 
@@ -323,8 +339,8 @@ WantedBy=${runningAsRoot ? 'multi-user.target' : 'default.target'}`;
 
 function setupNohupFallback(
   projectRoot: string,
+  npmPath: string,
   nodePath: string,
-  homeDir: string,
 ): void {
   logger.warn('No systemd detected — generating nohup wrapper script');
 
@@ -351,7 +367,7 @@ function setupNohupFallback(
     'fi',
     '',
     'echo "Starting NanoClaw..."',
-    `nohup ${JSON.stringify(nodePath)} ${JSON.stringify(projectRoot + '/dist/index.js')} \\`,
+    `nohup ${JSON.stringify(npmPath)} start \\`,
     `  >> ${JSON.stringify(projectRoot + '/logs/nanoclaw.log')} \\`,
     `  2>> ${JSON.stringify(projectRoot + '/logs/nanoclaw.error.log')} &`,
     '',

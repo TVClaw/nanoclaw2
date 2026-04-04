@@ -141,7 +141,14 @@ elif [ "$NATIVE_OK" = "false" ]; then
   STATUS="native_failed"
 fi
 
-cat <<EOF
+if [ "${TVCLAW_SETUP_UI:-}" = "1" ]; then
+  if [ "$STATUS" = "success" ]; then
+    echo "✓ Node packages and build tools are ready."
+  else
+    echo "✗ Bootstrap did not finish — see logs/setup.log"
+  fi
+else
+  cat <<EOF
 === NANOCLAW SETUP: BOOTSTRAP ===
 PLATFORM: $PLATFORM
 IS_WSL: $IS_WSL
@@ -156,6 +163,7 @@ STATUS: $STATUS
 LOG: logs/setup.log
 === END ===
 EOF
+fi
 
 log "=== Bootstrap completed: $STATUS ==="
 

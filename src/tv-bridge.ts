@@ -33,9 +33,7 @@ function defaultLogoPath(): string {
 function defaultApkPath(): string | undefined {
   const env = process.env.TVCLAW_CLIENT_APK?.trim();
   if (env && existsSync(env)) return env;
-  const p = path.join(
-    process.cwd(),
-    '..',
+  const rel = path.join(
     'TVClaw',
     'apps',
     'client-android',
@@ -46,7 +44,14 @@ function defaultApkPath(): string | undefined {
     'debug',
     'app-debug.apk',
   );
-  return existsSync(p) ? p : undefined;
+  const candidates = [
+    path.join(process.cwd(), '..', rel),
+    path.join(process.cwd(), rel),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return undefined;
 }
 
 function preferredLanIPv4(): string | null {
@@ -157,18 +162,39 @@ type TvTarget = {
   port: number;
   ws: WebSocket | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  welcomeSent: boolean;
 };
+
+export type TvWelcomeInfo = { host: string; port: number; key: string };
+
+export type TvWelcomeNotifier = (info: TvWelcomeInfo) => void | Promise<void>;
 
 export class TvBridge {
   private readonly sockets = new Set<WebSocket>();
   private httpServer: Server | null = null;
-  private apkPath: string | undefined;
   private bonjour: Bonjour | null = null;
   private browser: ReturnType<Bonjour['find']> | null = null;
   private readonly targets = new Map<string, TvTarget>();
   private readonly vibeDir = path.join(DATA_DIR, 'vibes');
   private readonly sseClients = new Set<ServerResponse>();
   private readonly logoPath = defaultLogoPath();
+  private tvWelcomeNotifier: TvWelcomeNotifier | null = null;
+
+  setTvWelcomeNotifier(fn: TvWelcomeNotifier | null): void {
+    this.tvWelcomeNotifier = fn;
+  }
+
+  private invokeTvWelcomeNotifier(t: TvTarget): void {
+    const fn = this.tvWelcomeNotifier;
+    if (!fn) return;
+    try {
+      void Promise.resolve(
+        fn({ host: t.host, port: t.port, key: t.key }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
 
   getHttpBaseUrl(): string {
     const ip = preferredLanIPv4() ?? '127.0.0.1';
@@ -271,7 +297,35 @@ export class TvBridge {
     t.ws = ws;
     ws.on('open', () => {
       this.sockets.add(ws);
-      logger.info({ url }, 'tvclaw outbound WebSocket open');
+      logger.info(
+        { url },
+        'tvclaw outbound WebSocket open (handshake complete — brain can send to TV)',
+      );
+      if (t.welcomeSent) {
+        return;
+      }
+      if (process.env.TVCLAW_SKIP_TV_WELCOME_TOAST === '1') {
+        t.welcomeSent = true;
+        this.invokeTvWelcomeNotifier(t);
+        return;
+      }
+      const toastMessage =
+        process.env.TVCLAW_TV_WELCOME_TOAST?.trim() ||
+        'Welcome to TVClaw! You are connected\nUse your TVClaw WhatsApp group on your phone to talk to the assistant';
+      try {
+        ws.send(
+          JSON.stringify(
+            createEnvelope('SHOW_TOAST', { message: toastMessage }),
+          ),
+        );
+        t.welcomeSent = true;
+        this.invokeTvWelcomeNotifier(t);
+      } catch (err) {
+        logger.warn(
+          { err, url },
+          'tvclaw: welcome SHOW_TOAST send failed right after handshake',
+        );
+      }
     });
     ws.on('message', () => {
       /* TV → host messages ignored for vision-free build */
@@ -299,7 +353,14 @@ export class TvBridge {
     const key = this.serviceKey(s);
     let t = this.targets.get(key);
     if (!t) {
-      t = { key, host, port: s.port, ws: null, reconnectTimer: null };
+      t = {
+        key,
+        host,
+        port: s.port,
+        ws: null,
+        reconnectTimer: null,
+        welcomeSent: false,
+      };
       this.targets.set(key, t);
     } else {
       const changed = t.host !== host || t.port !== s.port;
@@ -325,10 +386,13 @@ export class TvBridge {
     logger.info({ name: s.name }, 'tvclaw browse: service down');
   }
 
+  private resolveClientApkPath(): string | undefined {
+    return defaultApkPath();
+  }
+
   start(): void {
     if (this.httpServer) return;
     const httpPort = Number(process.env.TVCLAW_HTTP_PORT ?? 8770);
-    this.apkPath = defaultApkPath();
 
     this.bonjour = new Bonjour();
     this.browser = this.bonjour.find({ type: 'tvclaw', protocol: 'tcp' });
@@ -381,7 +445,8 @@ export class TvBridge {
       }
 
       if (read && pathname === '/') {
-        if (!this.apkPath) {
+        const apkPath0 = this.resolveClientApkPath();
+        if (!apkPath0) {
           res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
           if (m === 'HEAD') res.end();
           else {
@@ -394,31 +459,36 @@ export class TvBridge {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         if (m === 'HEAD') res.end();
         else {
+          const v = Math.floor(statSync(apkPath0).mtimeMs / 1000);
           res.end(
             `<!DOCTYPE html><html><head><meta charset="utf-8"><title>TVClaw</title></head><body>` +
-              `<p><a href="/tvclaw-client.apk">Download TV client (APK)</a></p></body></html>`,
+              `<p><a href="/tvclaw-client.apk?v=${v}">Download TV client (APK)</a></p></body></html>`,
           );
         }
         return;
       }
 
       if (read && pathname === '/tvclaw-client.apk') {
-        if (!this.apkPath) {
+        const apkPath1 = this.resolveClientApkPath();
+        if (!apkPath1) {
           res.writeHead(404);
           res.end();
           return;
         }
-        const st = statSync(this.apkPath);
+        const st = statSync(apkPath1);
         res.writeHead(200, {
           'Content-Type': 'application/vnd.android.package-archive',
           'Content-Length': st.size,
           'Content-Disposition': 'attachment; filename="tvclaw-client.apk"',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          Pragma: 'no-cache',
+          Expires: '0',
         });
         if (m === 'HEAD') {
           res.end();
           return;
         }
-        createReadStream(this.apkPath)
+        createReadStream(apkPath1)
           .pipe(res)
           .on('error', () => {
             if (!res.headersSent) res.writeHead(500);
@@ -587,7 +657,7 @@ export class TvBridge {
         { httpPort },
         `tvclaw brain http ${httpPort} (APK, POST /tv, games, keypad)`,
       );
-      printLanBanner(httpPort, !!this.apkPath);
+      printLanBanner(httpPort, !!this.resolveClientApkPath());
     });
   }
 

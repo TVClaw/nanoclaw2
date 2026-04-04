@@ -14,7 +14,13 @@ import pino from 'pino';
 
 const AUTH_DIR = './store/auth';
 
-const logger = pino({ level: 'warn' });
+const logger = pino({
+  level:
+    process.env.TVCLAW_INSTALLER === '1' ||
+    process.env.TVCLAW_QUIET_BAILEYS === '1'
+      ? 'silent'
+      : 'warn',
+});
 
 const groupName =
   (process.env.WHATSAPP_AGENT_GROUP_NAME || 'TVClaw').trim() || 'TVClaw';
@@ -102,6 +108,35 @@ async function ensureTvclawGroup(
   return meta.id;
 }
 
+function prebuiltApkPathOnBrain(): string {
+  const candidates = [
+    path.resolve(process.cwd(), '../prebuilt/tvclaw-android.apk'),
+    path.resolve(process.cwd(), 'prebuilt/tvclaw-android.apk'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return path.resolve(process.cwd(), '../prebuilt/tvclaw-android.apk');
+}
+
+async function postTvSetupGuideToGroup(
+  sock: ReturnType<typeof makeWASocket>,
+  groupJid: string,
+): Promise<void> {
+  const apkPath = prebuiltApkPathOnBrain();
+  const parts = [
+    `📺 Welcome to “${groupName}”. This WhatsApp group is the remote for your TV.`,
+    `TVClaw app itself must run on your TV.`,
+    `How to put the TVClaw app on the TV:\n\n• TV browser: when setup finishes, a download link will be posted in this group — open it in the TV’s browser on the same Wi‑Fi`,
+  ];
+  for (const text of parts) {
+    await sock.sendMessage(groupJid, { text });
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
 async function main(): Promise<void> {
   if (process.env.WHATSAPP_SKIP_BOOTSTRAP === '1') {
     console.log('WHATSAPP_SKIP_BOOTSTRAP=1 — skipping group bootstrap');
@@ -149,6 +184,10 @@ async function main(): Promise<void> {
         if (reason === DisconnectReason.loggedOut) {
           clearTimeout(t);
           reject(new Error('Logged out — delete store/auth and link again.'));
+        } else if (reason === 515) {
+          console.log(
+            '\n⟳ Brief WhatsApp stream hiccup (515) — waiting for reconnect…',
+          );
         }
       }
       if (connection === 'open') {
@@ -197,9 +236,38 @@ async function main(): Promise<void> {
     process.exit(reg.status ?? 1);
   }
 
+  try {
+    await postTvSetupGuideToGroup(sock, groupJid);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`Could not post setup tips to WhatsApp: ${msg}`);
+  }
+
+  console.log('');
+  console.log('────────────────────────────────────────────────────────────');
+  console.log('You’re ready to use TVClaw from WhatsApp');
+  console.log('────────────────────────────────────────────────────────────');
+  console.log('');
   console.log(
-    '\nMain group registered. Use this WhatsApp group to control TVClaw.\n',
+    `  • Check the “${groupName}” WhatsApp group — setup steps for the TV were posted there too.`,
   );
+  console.log('');
+  console.log(
+    '  • Chat in that group in plain language to steer the TV. Keep this computer on and online.',
+  );
+  console.log('');
+  console.log(
+    `  • On the TV you may see “${assistant}” when the assistant is active.`,
+  );
+  console.log('');
+  console.log(
+    '  • The installer continues on this computer: TV app via adb if available, or a link / file path for the TV.',
+  );
+  console.log('');
+  console.log(
+    '  • TVClaw’s brain stays in the background on this computer unless you skipped that.',
+  );
+  console.log('');
 
   sock.end(undefined);
 }

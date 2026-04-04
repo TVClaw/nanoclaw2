@@ -18,14 +18,18 @@ const QR_FILE = './store/qr-data.txt';
 const STATUS_FILE = './store/auth-status.txt';
 
 const logger = pino({
-  level: 'warn',
+  level:
+    process.env.TVCLAW_INSTALLER === '1' ||
+    process.env.TVCLAW_QUIET_BAILEYS === '1'
+      ? 'silent'
+      : 'warn',
 });
 
 const usePairingCode = process.argv.includes('--pairing-code');
 const useBrowserQr = process.argv.includes('--browser-qr');
 const phoneArg = process.argv.find((_, i, arr) => arr[i - 1] === '--phone');
 
-function openQrInBrowser(qrPayload: string): void {
+function openQrInBrowser(qrPayload: string, launchBrowser: boolean): void {
   void (async () => {
     const QRMod = await import('qrcode');
     const QRCode = QRMod.default as {
@@ -39,8 +43,11 @@ function openQrInBrowser(qrPayload: string): void {
     fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
     fs.writeFileSync(
       htmlPath,
-      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>WhatsApp TVClaw</title></head><body style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;padding:24px"><h1>Scan with WhatsApp</h1><p>Settings → Linked Devices → Link a device</p><img alt="QR" src="${dataUrl}" width="512" height="512"/></body></html>`,
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><title>WhatsApp — TVClaw</title></head><body style="display:flex;flex-direction:column;align-items:center;font-family:sans-serif;max-width:36rem;margin:0 auto;padding:24px;line-height:1.5"><h1 style="margin-bottom:0.5rem">Link WhatsApp to TVClaw</h1><p style="color:#444">On your phone: <strong>Settings → Linked devices → Link a device</strong>, then scan this code.</p><p style="color:#666;font-size:0.95rem">The code refreshes every so often. If scanning fails, press <strong>Refresh</strong> in this window (or Cmd+R / F5) to load the latest code.</p><p style="color:#444">When WhatsApp says you’re linked, return to the installer on this computer.</p><img alt="QR code for WhatsApp" src="${dataUrl}" width="512" height="512" style="max-width:100%;height:auto;margin-top:16px"/></body></html>`,
     );
+    if (!launchBrowser) {
+      return;
+    }
     const abs = path.resolve(htmlPath);
     try {
       if (process.platform === 'darwin') {
@@ -75,9 +82,9 @@ async function connectSocket(
 
   if (state.creds.me?.id && !isReconnect) {
     fs.writeFileSync(STATUS_FILE, 'already_authenticated');
-    console.log('✓ Already authenticated with WhatsApp');
+    console.log('✓ This computer is already linked to WhatsApp.');
     console.log(
-      '  To re-authenticate, delete the store/auth folder and run again.',
+      '  To link a different account, remove the folder store/auth in this project and run this step again.',
     );
     process.exit(0);
   }
@@ -99,6 +106,9 @@ async function connectSocket(
     logger,
     browser: Browsers.macOS('Chrome'),
   });
+
+  let qrBannerPrinted = false;
+  let browserQrLaunched = false;
 
   if (usePairingCode && phoneNumber && !state.creds.me) {
     setTimeout(async () => {
@@ -123,12 +133,23 @@ async function connectSocket(
 
     if (qr) {
       fs.writeFileSync(QR_FILE, qr);
-      console.log('Scan this QR code with WhatsApp:\n');
-      console.log('  1. Open WhatsApp on your phone');
-      console.log('  2. Tap Settings → Linked Devices → Link a Device');
-      console.log('  3. Point your camera at the QR code below\n');
+      if (!qrBannerPrinted) {
+        qrBannerPrinted = true;
+        console.log('Link WhatsApp to TVClaw — scan the code below.\n');
+        console.log('  On your phone: Settings → Linked devices → Link a device');
+        if (useBrowserQr) {
+          console.log(
+            '  A browser page opens once with a large code; it updates on refresh if the code expires.\n',
+          );
+        } else {
+          console.log(
+            '  The code in the terminal may refresh — keep scanning until it links.\n',
+          );
+        }
+      }
       if (useBrowserQr) {
-        openQrInBrowser(qr);
+        openQrInBrowser(qr, !browserQrLaunched);
+        browserQrLaunched = true;
       }
       qrcode.generate(qr, { small: true });
     }
@@ -168,11 +189,12 @@ async function connectSocket(
       } catch {
         /* ignore */
       }
-      console.log('\n✓ Successfully authenticated with WhatsApp!');
-      console.log('  Credentials saved to store/auth/');
-      console.log(
-        '  Run: npm run link:whatsapp — to create the TVClaw group and register.\n',
-      );
+      console.log('\n✓ WhatsApp on your phone is now linked to TVClaw on this computer.');
+      console.log('');
+      console.log('  What happens next: the setup will create (or open) your “TVClaw” chat in WhatsApp');
+      console.log('  and finish connecting it. If you are using the TVClaw installer, just wait — it continues');
+      console.log('  on its own. If you ran this step alone, run:  tvclaw link-whatsapp');
+      console.log('');
       setTimeout(() => process.exit(0), 1000);
     }
   });
