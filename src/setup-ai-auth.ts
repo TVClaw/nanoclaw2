@@ -47,6 +47,10 @@ function askSecret(prompt: string): Promise<string> {
     const cleanup = () => {
       stdinStream.setRawMode(false);
       stdinStream.removeListener('data', onData);
+      stdinStream.pause();
+      if (typeof stdinStream.unref === 'function') {
+        stdinStream.unref();
+      }
     };
     const onData = (chunk: Buffer) => {
       const s = chunk.toString('utf8');
