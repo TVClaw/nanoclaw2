@@ -76,9 +76,7 @@ export const MAX_MESSAGES_PER_PROMPT = Math.max(
 );
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(
-  process.env.IDLE_TIMEOUT ||
-    envConfig.IDLE_TIMEOUT ||
-    DEFAULT_IDLE_TIMEOUT_MS,
+  process.env.IDLE_TIMEOUT || envConfig.IDLE_TIMEOUT || DEFAULT_IDLE_TIMEOUT_MS,
   10,
 );
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
@@ -96,12 +94,7 @@ function resolvedSdkCap(
   defaultValue: string,
 ): string | undefined {
   const raw = process.env[key]?.trim() ?? envConfig[key]?.trim();
-  if (
-    raw === '0' ||
-    raw === 'off' ||
-    raw === 'false' ||
-    raw === 'none'
-  ) {
+  if (raw === '0' || raw === 'off' || raw === 'false' || raw === 'none') {
     return undefined;
   }
   if (raw) return raw;

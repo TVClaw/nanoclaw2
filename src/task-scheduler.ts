@@ -19,10 +19,7 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
-import {
-  formatAgentWhatsAppText,
-  formatOutbound,
-} from './router.js';
+import { formatAgentWhatsAppText, formatOutbound } from './router.js';
 import { RegisteredGroup, ScheduledTask } from './types.js';
 import { getTvBridge } from './tv-bridge.js';
 

@@ -307,10 +307,9 @@ describe('formatAgentWhatsAppText', () => {
 
   it('returns chat text when present alongside vibe', () => {
     expect(
-      formatAgentWhatsAppText(
-        'Hello\n<vibe-page><p>x</p></vibe-page>',
-        { tvVibeHosted: true },
-      ),
+      formatAgentWhatsAppText('Hello\n<vibe-page><p>x</p></vibe-page>', {
+        tvVibeHosted: true,
+      }),
     ).toBe('Hello');
   });
 });
