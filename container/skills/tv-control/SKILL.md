@@ -1,6 +1,6 @@
 ---
 name: tv-control
-description: Control TVClaw Android TVs on the LAN. Open apps, URLs, search, media keys, D-pad, toast. Main group only. Use for Netflix, YouTube, games on the brain HTTP server, and HTML vibe pages on TV. Never send brain /keypad URLs to the user; for games say scan TV QR and press START.
+description: Control TVClaw Android TVs on the LAN. Open apps, URLs, search, media keys, D-pad, toast. Main group only. Use for Netflix, YouTube, games on the brain HTTP server, and HTML vibe pages on TV. Never send brain /keypad URLs to the user. Mention scan-TV QR and START only for built-in brain games or vibe HTML that used `<!-- nanoclaw:phone-remote -->`.
 ---
 
 # TV control (TVClaw)
@@ -20,7 +20,7 @@ Actions:
 - **UNIVERSAL_SEARCH** — `query` (Android TV global search)
 - **SLEEP_TIMER** — `minutes` (positive int)
 
-**Games on the brain** (same LAN): open with **OPEN_URL** and a full game URL or path the host resolves (see group CLAUDE.md). **Do not** tell the user to open `.../keypad` or paste the brain keypad URL in chat or `send_message`. For phone control of D-pad games, instruct them to **scan the QR displayed on the TV** and **press START** on the remote page that opens (or use **KEY_EVENT** from here).
+**Games on the brain** (same LAN): open with **OPEN_URL** and a full game URL or path the host resolves (see group CLAUDE.md). **Do not** tell the user to open `.../keypad` or paste the brain keypad URL in chat or `send_message`. For those games, the TV shows a QR — then say scan QR and **START**. For plain **vibe** pages without `<!-- nanoclaw:phone-remote -->`, the page opens directly; do not tell them to scan a gamepad QR unless you know that gate is active.
 
 **Vibe / HTML on TV:** Put full HTML inside `<vibe-page>...</vibe-page>` in your reply; the host strips it for chat, hosts the page, and can open it on the TV. Follow group CLAUDE.md for TV-safe layout (large type, readable from distance).
 

@@ -7,9 +7,12 @@ import {
 } from './config.js';
 import {
   escapeXml,
+  formatAgentWhatsAppText,
   formatMessages,
   formatOutbound,
+  hasVibePageBlock,
   stripInternalTags,
+  stripVibePageBlocks,
 } from './router.js';
 import { NewMessage } from './types.js';
 
@@ -282,6 +285,44 @@ describe('formatOutbound', () => {
     expect(
       formatOutbound('<internal>thinking</internal>The answer is 42'),
     ).toBe('The answer is 42');
+  });
+});
+
+describe('formatAgentWhatsAppText', () => {
+  it('returns fallback when only vibe-page and TV hosted', () => {
+    expect(
+      formatAgentWhatsAppText('<vibe-page><p>x</p></vibe-page>', {
+        tvVibeHosted: true,
+      }),
+    ).toBe('*Opened on the TV.*');
+  });
+
+  it('returns empty when vibe only but TV not hosted', () => {
+    expect(
+      formatAgentWhatsAppText('<vibe-page><p>x</p></vibe-page>', {
+        tvVibeHosted: false,
+      }),
+    ).toBe('');
+  });
+
+  it('returns chat text when present alongside vibe', () => {
+    expect(
+      formatAgentWhatsAppText(
+        'Hello\n<vibe-page><p>x</p></vibe-page>',
+        { tvVibeHosted: true },
+      ),
+    ).toBe('Hello');
+  });
+});
+
+describe('stripVibePageBlocks / hasVibePageBlock', () => {
+  it('strip removes vibe wrapper', () => {
+    expect(stripVibePageBlocks('a<vibe-page>x</vibe-page>b')).toBe('ab');
+  });
+
+  it('has detects vibe', () => {
+    expect(hasVibePageBlock('no')).toBe(false);
+    expect(hasVibePageBlock('<vibe-page></vibe-page>')).toBe(true);
   });
 });
 

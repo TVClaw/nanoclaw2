@@ -1,9 +1,17 @@
+const PHONE_REMOTE_MARK = '<!-- nanoclaw:phone-remote -->';
+
 export function shouldWrapVibePage(html: string): boolean {
-  return !html.trimStart().startsWith('<!-- nanoclaw:no-vibe-shell -->');
+  const t = html.trimStart();
+  if (t.startsWith('<!-- nanoclaw:no-vibe-shell -->')) return false;
+  return t.startsWith(PHONE_REMOTE_MARK);
 }
 
 export function wrapVibePageHtml(innerHtml: string): string {
-  const embedLiteral = JSON.stringify(innerHtml).replace(/</g, '\\u003c');
+  let embed = innerHtml.trimStart();
+  if (embed.startsWith(PHONE_REMOTE_MARK)) {
+    embed = embed.slice(PHONE_REMOTE_MARK.length).trimStart();
+  }
+  const embedLiteral = JSON.stringify(embed).replace(/</g, '\\u003c');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

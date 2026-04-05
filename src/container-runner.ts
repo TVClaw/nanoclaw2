@@ -13,6 +13,8 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  NANOCLAW_MAX_AGENT_TURNS,
+  NANOCLAW_MAX_THINKING_TOKENS,
   ONECLI_URL,
   isAgentDryRun,
   TIMEZONE,
@@ -249,6 +251,16 @@ async function buildContainerArgs(
     logger.warn(
       { containerName },
       'OneCLI gateway not reachable — container will have no credentials',
+    );
+  }
+
+  if (NANOCLAW_MAX_AGENT_TURNS) {
+    args.push('-e', `NANOCLAW_MAX_AGENT_TURNS=${NANOCLAW_MAX_AGENT_TURNS}`);
+  }
+  if (NANOCLAW_MAX_THINKING_TOKENS) {
+    args.push(
+      '-e',
+      `NANOCLAW_MAX_THINKING_TOKENS=${NANOCLAW_MAX_THINKING_TOKENS}`,
     );
   }
 

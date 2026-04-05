@@ -19,7 +19,12 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
+import {
+  formatAgentWhatsAppText,
+  formatOutbound,
+} from './router.js';
 import { RegisteredGroup, ScheduledTask } from './types.js';
+import { getTvBridge } from './tv-bridge.js';
 
 /**
  * Compute the next run time for a recurring task, anchored to the
@@ -187,8 +192,32 @@ async function runTask(
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;
-          // Forward result to user (sendMessage handles formatting)
-          await deps.sendMessage(task.chat_jid, streamedOutput.result);
+          const raw = streamedOutput.result;
+          let tvVibeHosted = false;
+          if (isMain && typeof raw === 'string') {
+            const vibeMatch = raw.match(/<vibe-page>([\s\S]*?)<\/vibe-page>/);
+            if (vibeMatch) {
+              const html = (vibeMatch[1] ?? '').trim();
+              if (html) {
+                try {
+                  const bridge = getTvBridge();
+                  const url = bridge.addVibePage(html);
+                  bridge.sendToAll('OPEN_URL', { url });
+                  tvVibeHosted = true;
+                } catch (err) {
+                  logger.error(
+                    { err, taskId: task.id },
+                    'Failed to host vibe page from scheduled task',
+                  );
+                }
+              }
+            }
+          }
+          const line =
+            typeof raw === 'string'
+              ? formatAgentWhatsAppText(raw, { tvVibeHosted })
+              : formatOutbound(JSON.stringify(raw));
+          if (line) await deps.sendMessage(task.chat_jid, line);
           scheduleClose();
         }
         if (streamedOutput.status === 'success') {

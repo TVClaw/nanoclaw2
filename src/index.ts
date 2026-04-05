@@ -55,6 +55,7 @@ import { startIpcWatcher } from './ipc.js';
 import {
   findChannel,
   formatMessages,
+  formatAgentWhatsAppText,
   formatOutbound,
   routeOutbound,
 } from './router.js';
@@ -312,6 +313,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         typeof result.result === 'string'
           ? result.result
           : JSON.stringify(result.result);
+      let tvVibeHosted = false;
       if (isMainGroup) {
         const vibeMatch = raw.match(/<vibe-page>([\s\S]*?)<\/vibe-page>/);
         if (vibeMatch) {
@@ -321,6 +323,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
               const bridge = getTvBridge();
               const url = bridge.addVibePage(html);
               bridge.sendToAll('OPEN_URL', { url });
+              tvVibeHosted = true;
             } catch (err) {
               logger.error(
                 { err, group: group.name },
@@ -330,9 +333,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           }
         }
       }
-      const text = formatOutbound(
-        raw.replace(/<vibe-page>[\s\S]*?<\/vibe-page>/g, ''),
-      );
+      const text = formatAgentWhatsAppText(raw, { tvVibeHosted });
       logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
       if (text) {
         await channel.sendMessage(chatJid, text);

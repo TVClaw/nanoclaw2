@@ -41,6 +41,27 @@ export function formatOutbound(rawText: string): string {
   return text;
 }
 
+export function stripVibePageBlocks(text: string): string {
+  return text.replace(/<vibe-page>[\s\S]*?<\/vibe-page>/g, '');
+}
+
+export function hasVibePageBlock(text: string): boolean {
+  return /<vibe-page>[\s\S]*?<\/vibe-page>/.test(text);
+}
+
+export function formatAgentWhatsAppText(
+  raw: string,
+  opts: { tvVibeHosted?: boolean } = {},
+): string {
+  const withoutVibe = stripVibePageBlocks(raw);
+  const text = formatOutbound(withoutVibe);
+  if (text !== '') return text;
+  if (opts.tvVibeHosted && hasVibePageBlock(raw)) {
+    return '*Opened on the TV.*';
+  }
+  return '';
+}
+
 export function routeOutbound(
   channels: Channel[],
   jid: string,

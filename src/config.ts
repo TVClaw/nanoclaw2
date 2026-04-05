@@ -10,7 +10,19 @@ const envConfig = readEnvFile([
   'ASSISTANT_HAS_OWN_NUMBER',
   'ONECLI_URL',
   'TZ',
+  'IDLE_TIMEOUT',
+  'MAX_MESSAGES_PER_PROMPT',
+  'SESSION_IDLE_RESET_MINUTES',
+  'MAX_CONCURRENT_CONTAINERS',
+  'NANOCLAW_MAX_AGENT_TURNS',
+  'NANOCLAW_MAX_THINKING_TOKENS',
 ]);
+
+const DEFAULT_IDLE_TIMEOUT_MS = '3600000';
+const DEFAULT_MAX_MESSAGES_PER_PROMPT = '8';
+const DEFAULT_MAX_CONCURRENT_CONTAINERS = '6';
+const DEFAULT_NANOCLAW_MAX_AGENT_TURNS = '35';
+const DEFAULT_NANOCLAW_MAX_THINKING_TOKENS = '8192';
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
@@ -55,13 +67,54 @@ export const ONECLI_URL =
   process.env.ONECLI_URL || envConfig.ONECLI_URL || 'http://localhost:10254';
 export const MAX_MESSAGES_PER_PROMPT = Math.max(
   1,
-  parseInt(process.env.MAX_MESSAGES_PER_PROMPT || '10', 10) || 10,
+  parseInt(
+    process.env.MAX_MESSAGES_PER_PROMPT ||
+      envConfig.MAX_MESSAGES_PER_PROMPT ||
+      DEFAULT_MAX_MESSAGES_PER_PROMPT,
+    10,
+  ) || parseInt(DEFAULT_MAX_MESSAGES_PER_PROMPT, 10),
 );
 export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
+export const IDLE_TIMEOUT = parseInt(
+  process.env.IDLE_TIMEOUT ||
+    envConfig.IDLE_TIMEOUT ||
+    DEFAULT_IDLE_TIMEOUT_MS,
+  10,
+);
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
   1,
-  parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,
+  parseInt(
+    process.env.MAX_CONCURRENT_CONTAINERS ||
+      envConfig.MAX_CONCURRENT_CONTAINERS ||
+      DEFAULT_MAX_CONCURRENT_CONTAINERS,
+    10,
+  ) || parseInt(DEFAULT_MAX_CONCURRENT_CONTAINERS, 10),
+);
+
+function resolvedSdkCap(
+  key: 'NANOCLAW_MAX_AGENT_TURNS' | 'NANOCLAW_MAX_THINKING_TOKENS',
+  defaultValue: string,
+): string | undefined {
+  const raw = process.env[key]?.trim() ?? envConfig[key]?.trim();
+  if (
+    raw === '0' ||
+    raw === 'off' ||
+    raw === 'false' ||
+    raw === 'none'
+  ) {
+    return undefined;
+  }
+  if (raw) return raw;
+  return defaultValue;
+}
+
+export const NANOCLAW_MAX_AGENT_TURNS = resolvedSdkCap(
+  'NANOCLAW_MAX_AGENT_TURNS',
+  DEFAULT_NANOCLAW_MAX_AGENT_TURNS,
+);
+export const NANOCLAW_MAX_THINKING_TOKENS = resolvedSdkCap(
+  'NANOCLAW_MAX_THINKING_TOKENS',
+  DEFAULT_NANOCLAW_MAX_THINKING_TOKENS,
 );
 
 function escapeRegex(str: string): string {
@@ -102,7 +155,12 @@ export const MACOS_DESKTOP_NOTIFY = process.env.TVCLAW_MACOS_NOTIFY === '1';
 
 export const SESSION_IDLE_RESET_MINUTES = Math.max(
   0,
-  parseInt(process.env.SESSION_IDLE_RESET_MINUTES || '0', 10) || 0,
+  parseInt(
+    process.env.SESSION_IDLE_RESET_MINUTES ||
+      envConfig.SESSION_IDLE_RESET_MINUTES ||
+      '0',
+    10,
+  ) || 0,
 );
 
 export function isAgentDryRun(): boolean {

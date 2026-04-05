@@ -48,6 +48,6 @@ test -f /workspace/group/CLAUDE.md && echo "group memory: yes" || echo "group me
 
 ## Report format
 
-Summarize: **TVClaw** — TV control via MCP, browser for fresh web data, vibe pages with `<vibe-page>` for the TV, HTML games on the brain host; user gets the phone remote via QR on the TV (do not send keypad URLs in chat). List skills and tools you actually find.
+Summarize: **TVClaw** — TV control via MCP, browser for fresh web data, vibe pages with `<vibe-page>` for the TV (phone gamepad QR only if the HTML starts with `<!-- nanoclaw:phone-remote -->`), HTML games on the brain host; do not send keypad URLs in chat. List skills and tools you actually find.
 
 **See also:** `/status` for a quick health check.

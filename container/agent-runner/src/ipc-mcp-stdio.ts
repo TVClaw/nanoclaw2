@@ -42,12 +42,12 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Hard rule: never put the brain LAN keypad link in user-visible text — do not send any http(s) URL to .../keypad or :8770/keypad (or paste NANOCLAW_TV_HTTP_ORIGIN + /keypad). For TV HTML games, tell the user to scan the QR shown on the TV with their phone, then press START on the remote that opens; do not give a typed URL for the remote.",
+  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Hard rule: never put the brain LAN keypad link in user-visible text — do not send any http(s) URL to .../keypad or :8770/keypad (or paste NANOCLAW_TV_HTTP_ORIGIN + /keypad). Only tell the user to scan a QR on the TV / press START when they need the phone gamepad: built-in brain games, or vibe HTML you wrote with <!-- nanoclaw:phone-remote --> first. For read-only vibe pages, do not mention scanning a gamepad QR. Never give a typed keypad URL.",
   {
     text: z
       .string()
       .describe(
-        'User-visible text. Must not contain brain keypad URLs (/keypad on the LAN brain). For game remotes, describe QR on TV + START only.',
+        'User-visible text. Must not contain brain keypad URLs. Mention TV QR + START only for brain games or phone-remote vibe HTML.',
       ),
     sender: z
       .string()
@@ -202,7 +202,7 @@ function tvPayloadFromArgs(args: SendTvArgs): {
 
 server.tool(
   'send_tv_command',
-  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app. After OPEN_URL to an HTML game on the brain, any follow-up to the user must not include the keypad URL: never write http(s) .../keypad or the brain origin + /keypad in chat or send_message. Say only: look at the TV, scan the QR on the TV with the phone, then press START on the remote.`,
+  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app. After OPEN_URL to a brain game URL, never paste keypad URLs in chat; you may say scan QR on TV and START only for those games. After OPEN_URL or vibe pages that are not game-remote gated, do not tell them to scan a gamepad QR.`,
   sendTvCommandInput.shape,
   async (args) => {
     const parsed = sendTvCommandInput.safeParse(args);

@@ -435,9 +435,24 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  const maxTurnsRaw = process.env.NANOCLAW_MAX_AGENT_TURNS?.trim();
+  const maxTurnsParsed = maxTurnsRaw ? parseInt(maxTurnsRaw, 10) : NaN;
+  const maxTurns =
+    Number.isFinite(maxTurnsParsed) && maxTurnsParsed > 0
+      ? maxTurnsParsed
+      : undefined;
+  const maxThinkRaw = process.env.NANOCLAW_MAX_THINKING_TOKENS?.trim();
+  const maxThinkParsed = maxThinkRaw ? parseInt(maxThinkRaw, 10) : NaN;
+  const maxThinkingTokens =
+    Number.isFinite(maxThinkParsed) && maxThinkParsed > 0
+      ? maxThinkParsed
+      : undefined;
+
   for await (const message of query({
     prompt: stream,
     options: {
+      ...(maxTurns !== undefined ? { maxTurns } : {}),
+      ...(maxThinkingTokens !== undefined ? { maxThinkingTokens } : {}),
       cwd: '/workspace/group',
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
