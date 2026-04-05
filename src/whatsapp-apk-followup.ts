@@ -112,10 +112,10 @@ async function main(): Promise<void> {
   let body = '';
   if (viaAdb) {
     body =
-      '📺 TVClaw: the TV app was installed on your Android TV from the brain computer using adb. Open the TVClaw app on the TV when you are ready.';
+      '🦞📺 TVClaw: the TV app was installed on your Android TV from the brain computer using adb. Open the TVClaw app on the TV when you are ready.';
   } else {
     body =
-      '📺 TVClaw — install the app on the Android TV only (not on this phone).\n\n';
+      '🦞📺 TVClaw - install the app on the Android TV only (not on this phone).\n\n';
     if (httpUrl) {
       body += `On the TV, open its web browser and enter this address (same Wi‑Fi):\n${httpUrl}\n\n`;
     }

@@ -127,9 +127,12 @@ async function postTvSetupGuideToGroup(
 ): Promise<void> {
   const apkPath = prebuiltApkPathOnBrain();
   const parts = [
-    `📺 Welcome to “${groupName}”. This WhatsApp group is the remote for your TV.`,
-    `TVClaw app itself must run on your TV.`,
-    `How to put the TVClaw app on the TV:\n\n• TV browser: when setup finishes, a download link will be posted in this group — open it in the TV’s browser on the same Wi‑Fi`,
+`📺🦞 Welcome to ${groupName}. This WhatsApp group is your TV AI Agent.
+  
+The TVClaw app itself must run on your TV.
+  
+How to put the TVClaw app on the TV:
+• when setup finishes, a download link will be posted in this group — open it in the TV’s browser on the same Wi‑Fi`,
   ];
   for (const text of parts) {
     await sock.sendMessage(groupJid, { text });
