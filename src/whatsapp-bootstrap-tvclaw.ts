@@ -127,7 +127,7 @@ async function postTvSetupGuideToGroup(
 ): Promise<void> {
   const apkPath = prebuiltApkPathOnBrain();
   const parts = [
-`📺🦞 Welcome to ${groupName}. This WhatsApp group is your TV AI Agent.
+    `📺🦞 Welcome to ${groupName}. This WhatsApp group is your TV AI Agent.
   
 The TVClaw app itself must run on your TV.
   
