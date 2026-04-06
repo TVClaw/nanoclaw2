@@ -721,7 +721,7 @@ async function main(): Promise<void> {
       );
       return;
     }
-    const line = `📺 TVClaw: your Android TV app connected to this brain at ${host}:${port}. You can control the TV from this group.`;
+    const line = `📺🦞 TVClaw: your Android TV app connected. You can control the TV from this group.`;
     try {
       await routeOutbound(channels, jid, line);
     } catch (err) {

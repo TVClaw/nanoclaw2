@@ -109,13 +109,21 @@ async function main(): Promise<void> {
   sock.ev.on('creds.update', saveCreds);
   await waitOpen(sock);
 
+  const accessibilitySteps =
+    'Enable TVClaw Accessibility on the TV (needed for remote control):\n' +
+    '1) Settings on the TV\n' +
+    '2) Device preferences or System → Accessibility\n' +
+    '3) Open TVClaw in the installed services list\n' +
+    '4) Turn it ON and confirm any prompt\n\n';
+
   let body = '';
   if (viaAdb) {
     body =
-      '🦞📺 TVClaw: the TV app was installed on your Android TV from the brain computer using adb. Open the TVClaw app on the TV when you are ready.';
+      '📺🦞 TVClaw: the TV app was installed on your Android TV from the brain computer using adb. Open the TVClaw app on the TV when you are ready.\n\n';
+    body += accessibilitySteps;
   } else {
     body =
-      '🦞📺 TVClaw - install the app on the Android TV only (not on this phone).\n\n';
+      '📺🦞 TVClaw - install the app on the Android TV only (not on this phone).\n\n';
     if (httpUrl) {
       body += `On the TV, open its web browser and enter this address (same Wi‑Fi):\n${httpUrl}\n\n`;
     }
@@ -123,7 +131,8 @@ async function main(): Promise<void> {
       body += `Or you can use this computer -> copy the APK file to a USB stick -> open it from the TV’s file manager:\n${filePath}\n\n`;
     }
     body +=
-      'If Android blocks the install, use Settings → Apps → Special app access → Install unknown apps on the TV.';
+      'If Android blocks the install, use Settings → Apps → Special app access → Install unknown apps on the TV.\n\n';
+    body += accessibilitySteps;
   }
 
   for (const chunk of splitChunks(body, 3800)) {
