@@ -1,1 +1,3 @@
-npm run format:fix
+#!/usr/bin/env sh
+cd "$(dirname "$0")/.." || exit 1
+exec npx prettier --write "src/**/*.ts"

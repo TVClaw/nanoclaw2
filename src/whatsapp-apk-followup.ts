@@ -21,6 +21,11 @@ const logger = pino({
 });
 const AUTH_DIR = './store/auth';
 
+type WaConnectionUpdate = {
+  connection?: 'open' | 'close' | 'connecting';
+  lastDisconnect?: { error?: unknown };
+};
+
 function splitChunks(s: string, max: number): string[] {
   if (s.length <= max) {
     return [s];
@@ -35,15 +40,25 @@ function splitChunks(s: string, max: number): string[] {
 }
 
 async function waitOpen(sock: ReturnType<typeof makeWASocket>): Promise<void> {
+  if (process.env.TVCLAW_INSTALLER === '1') {
+    console.error(
+      'TVClaw: posting TV instructions — connecting to WhatsApp (wait up to ~2 min; stop other nanoclaw/npm start on this machine if this takes forever)…',
+    );
+  }
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(
-      () => reject(new Error('WhatsApp connection timeout')),
+      () =>
+        reject(
+          new Error(
+            'WhatsApp connection timeout — stop any other TVClaw brain using this folder, then re-run the installer or: cd nanoclaw2 && npx tsx src/whatsapp-apk-followup.ts',
+          ),
+        ),
       120_000,
     );
     sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
       if (connection === 'close') {
         const reason = (
-          lastDisconnect?.error as { output?: { statusCode?: number } }
+          ev.lastDisconnect?.error as { output?: { statusCode?: number } }
         )?.output?.statusCode;
         if (reason === DisconnectReason.loggedOut) {
           clearTimeout(t);
@@ -54,7 +69,7 @@ async function waitOpen(sock: ReturnType<typeof makeWASocket>): Promise<void> {
           );
         }
       }
-      if (connection === 'open') {
+      if (ev.connection === 'open') {
         clearTimeout(t);
         resolve();
       }
@@ -91,9 +106,31 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const { version } = await fetchLatestWaWebVersion({}).catch(() => ({
-    version: undefined as [number, number, number] | undefined,
-  }));
+  const withTimeout = <T>(
+    p: Promise<T>,
+    ms: number,
+    label: string,
+  ): Promise<T> => {
+    let to: ReturnType<typeof setTimeout> | undefined;
+    const timeoutP = new Promise<never>((_, rej) => {
+      to = setTimeout(() => rej(new Error(`${label} (${ms}ms)`)), ms);
+    });
+    return Promise.race([p, timeoutP]).finally(() => {
+      if (to) clearTimeout(to);
+    }) as Promise<T>;
+  };
+
+  let version: [number, number, number] | undefined;
+  try {
+    const meta = await withTimeout(
+      fetchLatestWaWebVersion({}),
+      25_000,
+      'fetchLatestWaWebVersion',
+    );
+    version = meta.version;
+  } catch {
+    version = undefined;
+  }
 
   const sock = makeWASocket({
     version,
@@ -108,6 +145,12 @@ async function main(): Promise<void> {
 
   sock.ev.on('creds.update', saveCreds);
   await waitOpen(sock);
+
+  if (process.env.TVCLAW_INSTALLER === '1') {
+    console.error(
+      'TVClaw: sending install instructions to your WhatsApp group…',
+    );
+  }
 
   const accessibilitySteps =
     'Enable TVClaw Accessibility on the TV (needed for remote control):\n' +
@@ -136,13 +179,23 @@ async function main(): Promise<void> {
   }
 
   for (const chunk of splitChunks(body, 3800)) {
-    await sock.sendMessage(jid, { text: chunk });
+    await withTimeout(
+      sock.sendMessage(jid, { text: chunk }),
+      90_000,
+      'WhatsApp sendMessage',
+    );
     await new Promise((r) => setTimeout(r, 700));
   }
 
   sock.end(undefined);
 }
 
-main().catch(() => {
+main().catch((err) => {
+  if (process.env.TVCLAW_INSTALLER === '1') {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `TVClaw: could not post TV app instructions to WhatsApp: ${msg}`,
+    );
+  }
   process.exit(0);
 });
