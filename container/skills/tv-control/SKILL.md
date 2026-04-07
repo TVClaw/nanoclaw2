@@ -20,7 +20,7 @@ Actions:
 - **UNIVERSAL_SEARCH** — `query` (Android TV global search)
 - **SLEEP_TIMER** — `minutes` (positive int)
 
-**Games on the brain** (same LAN): open with **OPEN_URL** and a full game URL or path the host resolves (see group CLAUDE.md). **Do not** tell the user to open `.../keypad` or paste the brain keypad URL in chat or `send_message`. For those games, the TV shows a QR — then say scan QR and **START**. For plain **vibe** pages without `<!-- nanoclaw:phone-remote -->`, the page opens directly; do not tell them to scan a gamepad QR unless you know that gate is active.
+**Games on the brain** (same LAN): open with **OPEN_URL** only for files that exist under `games/` on the project (see group CLAUDE.md for the shipped list). If the user wants a game that is not shipped, use `<vibe-page>` with `<!-- nanoclaw:phone-remote -->` and a full inline HTML game (SSE `/vibe-key-sse`, keypad commands, `canvas.focus()`), not a bogus `/games/...` URL. **Do not** tell the user to open `.../keypad` or paste the brain keypad URL in chat or `send_message`. For built-in brain games or phone-remote vibe HTML, the TV shows a QR — then say scan QR and **START**. For plain **vibe** pages without `<!-- nanoclaw:phone-remote -->`, the page opens directly; do not tell them to scan a gamepad QR unless you know that gate is active.
 
 **Vibe / HTML on TV:** Put full HTML inside `<vibe-page>...</vibe-page>` in your reply; the host strips it for chat, hosts the page, and can open it on the TV. Follow group CLAUDE.md for TV-safe layout (large type, readable from distance).
 

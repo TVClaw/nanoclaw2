@@ -202,7 +202,7 @@ function tvPayloadFromArgs(args: SendTvArgs): {
 
 server.tool(
   'send_tv_command',
-  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app. After OPEN_URL to a brain game URL, never paste keypad URLs in chat; you may say scan QR on TV and START only for those games. After OPEN_URL or vibe pages that are not game-remote gated, do not tell them to scan a gamepad QR.`,
+  `Control TVClaw Android TVs on the LAN (WebSocket from this Mac/PC to the TV). Main group only. If no TV is connected, commands are dropped — tell the user to open Connect bridge on the TV app. For brain OPEN_URL games, only use /games/*.html paths that exist under the project games/ folder — list that directory if needed; never open a missing file. For other games use vibe-page with <!-- nanoclaw:phone-remote --> instead of a fake games URL. After OPEN_URL to a brain game URL, never paste keypad URLs in chat; you may say scan QR on TV and START only for those games. After OPEN_URL or vibe pages that are not game-remote gated, do not tell them to scan a gamepad QR.`,
   sendTvCommandInput.shape,
   async (args) => {
     const parsed = sendTvCommandInput.safeParse(args);
