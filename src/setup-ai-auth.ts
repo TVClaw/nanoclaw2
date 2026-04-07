@@ -333,7 +333,9 @@ function rowIsAnthropicVaultSecret(row: unknown): boolean {
   ) {
     return true;
   }
-  const n = String(o.name ?? o.Name ?? '').trim().toLowerCase();
+  const n = String(o.name ?? o.Name ?? '')
+    .trim()
+    .toLowerCase();
   return n === 'anthropic';
 }
 
@@ -380,7 +382,9 @@ async function main(): Promise<void> {
   let list = run(exe, ['secrets', 'list'], false);
   if (needsAuth(list.stderr, list.stdout, list.status)) {
     console.log('');
-    console.log('Please sign in once so this app can save your key (follow the prompts below).');
+    console.log(
+      'Please sign in once so this app can save your key (follow the prompts below).',
+    );
     const st = run(exe, ['auth', 'login'], true);
     if (st.status !== 0) {
       console.error('auth login did not complete successfully.');
@@ -396,7 +400,9 @@ async function main(): Promise<void> {
 
   if (vaultListsAnthropicSecret(list.stdout)) {
     console.log('');
-    console.log('✓ A Claude (Anthropic) API key is already saved. You can continue.');
+    console.log(
+      '✓ A Claude (Anthropic) API key is already saved. You can continue.',
+    );
     console.log('');
     process.exit(0);
   }
@@ -428,7 +434,9 @@ async function main(): Promise<void> {
     console.log(
       '  3) Click this window, paste the key, then press Enter (typing also works).',
     );
-    console.log('     Each character shows as * — nothing is printed in plain text.');
+    console.log(
+      '     Each character shows as * — nothing is printed in plain text.',
+    );
     console.log('');
     value = await askSecret('Paste or type your key here, then Enter: ');
   }
@@ -478,7 +486,9 @@ async function main(): Promise<void> {
   }
 
   console.log('');
-  console.log('Done. Continue the installer, or start the brain from your TVClaw folder when you are ready.');
+  console.log(
+    'Done. Continue the installer, or start the brain from your TVClaw folder when you are ready.',
+  );
   console.log('To review saved keys later, open', origin, 'in a browser.');
   console.log('');
 }
