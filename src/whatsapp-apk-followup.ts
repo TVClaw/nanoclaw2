@@ -58,7 +58,7 @@ async function waitOpen(sock: ReturnType<typeof makeWASocket>): Promise<void> {
     sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
       if (connection === 'close') {
         const reason = (
-          ev.lastDisconnect?.error as { output?: { statusCode?: number } }
+          lastDisconnect?.error as { output?: { statusCode?: number } }
         )?.output?.statusCode;
         if (reason === DisconnectReason.loggedOut) {
           clearTimeout(t);
@@ -69,7 +69,7 @@ async function waitOpen(sock: ReturnType<typeof makeWASocket>): Promise<void> {
           );
         }
       }
-      if (ev.connection === 'open') {
+      if (connection === 'open') {
         clearTimeout(t);
         resolve();
       }
