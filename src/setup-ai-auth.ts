@@ -16,6 +16,10 @@ function prependLocalBinToPath(): void {
   }
 }
 
+function stripBracketedPasteWrappers(s: string): string {
+  return s.replace(/\u001b\[200~/g, '').replace(/\u001b\[201~/g, '');
+}
+
 function ask(prompt: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -31,12 +35,12 @@ function ask(prompt: string): Promise<string> {
 
 function askSecret(prompt: string): Promise<string> {
   return new Promise((resolve) => {
-    stdoutStream.write(prompt);
+    stdoutStream.write(`\n${prompt}`);
     if (!stdinStream.isTTY || !stdoutStream.isTTY) {
       console.log(
         '(This stdin is not a TTY — the key will echo. Prefer running in a real terminal.)',
       );
-      void ask('').then((a) => {
+      void ask('Paste API key, then Enter: ').then((a) => {
         resolve(a.trim());
       });
       return;
@@ -53,7 +57,7 @@ function askSecret(prompt: string): Promise<string> {
       }
     };
     const onData = (chunk: Buffer) => {
-      const s = chunk.toString('utf8');
+      const s = stripBracketedPasteWrappers(chunk.toString('utf8'));
       for (const c of s) {
         if (c === '\n' || c === '\r' || c === '\u0004') {
           cleanup();
@@ -297,22 +301,46 @@ function needsAuth(
   );
 }
 
-function alreadyHasAnthropicSecret(stdout: string): boolean {
-  if (/anthropic/i.test(stdout) && /secret|name|type/i.test(stdout))
-    return true;
+function parseSecretsListJson(stdout: string): unknown[] | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
   try {
-    const j = JSON.parse(stdout) as unknown;
-    if (!Array.isArray(j)) return false;
-    return j.some((row) => {
-      if (!row || typeof row !== 'object') return false;
-      const o = row as Record<string, unknown>;
-      const n = String(o.name ?? o.Name ?? '').toLowerCase();
-      const t = String(o.type ?? o.Type ?? '').toLowerCase();
-      return n.includes('anthropic') || t === 'anthropic';
-    });
+    const j = JSON.parse(trimmed) as unknown;
+    return Array.isArray(j) ? j : null;
   } catch {
-    return false;
+    const start = trimmed.indexOf('[');
+    const end = trimmed.lastIndexOf(']');
+    if (start === -1 || end <= start) return null;
+    try {
+      const j = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+      return Array.isArray(j) ? j : null;
+    } catch {
+      return null;
+    }
   }
+}
+
+function rowIsAnthropicVaultSecret(row: unknown): boolean {
+  if (!row || typeof row !== 'object') return false;
+  const o = row as Record<string, unknown>;
+  const t = String(o.type ?? o.Type ?? '').toLowerCase();
+  if (t === 'anthropic') return true;
+  const host = String(o.hostPattern ?? o.HostPattern ?? '').toLowerCase();
+  if (
+    host === 'api.anthropic.com' ||
+    host.endsWith('.anthropic.com') ||
+    host.includes('anthropic.com')
+  ) {
+    return true;
+  }
+  const n = String(o.name ?? o.Name ?? '').trim().toLowerCase();
+  return n === 'anthropic';
+}
+
+function vaultListsAnthropicSecret(stdout: string): boolean {
+  const rows = parseSecretsListJson(stdout);
+  if (!rows) return false;
+  return rows.some(rowIsAnthropicVaultSecret);
 }
 
 function stripCredentialLinesFromEnv(keys: string[]): void {
@@ -338,21 +366,21 @@ async function main(): Promise<void> {
   prependLocalBinToPath();
 
   console.log('');
-  console.log('TVClaw — connect the AI (OneCLI + Anthropic API key)');
-  console.log('(Same idea as npm run auth for WhatsApp.)');
+  console.log('Connect Claude for your TV assistant');
+  console.log('Your API key stays on this computer (encrypted storage).');
   console.log('');
 
   ensureEnvKeyValue('ONECLI_URL', 'http://127.0.0.1:10254');
 
   const origin = onecliOrigin();
-  console.log(`Using OneCLI at ${origin}`);
+  console.log(`Key storage service: ${origin}`);
 
   const exe = await ensureOneCliAndGateway(origin);
 
   let list = run(exe, ['secrets', 'list'], false);
   if (needsAuth(list.stderr, list.stdout, list.status)) {
     console.log('');
-    console.log('OneCLI needs you to log in once in this terminal…');
+    console.log('Please sign in once so this app can save your key (follow the prompts below).');
     const st = run(exe, ['auth', 'login'], true);
     if (st.status !== 0) {
       console.error('auth login did not complete successfully.');
@@ -366,12 +394,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  if (alreadyHasAnthropicSecret(list.stdout)) {
+  if (vaultListsAnthropicSecret(list.stdout)) {
     console.log('');
-    console.log('✓ An Anthropic-type secret is already registered.');
-    console.log(
-      '  Run npm start (or npm run dev:live) and send a WhatsApp message to test.',
-    );
+    console.log('✓ A Claude (Anthropic) API key is already saved. You can continue.');
     console.log('');
     process.exit(0);
   }
@@ -380,14 +405,14 @@ async function main(): Promise<void> {
   let value = '';
   if (fromEnv.ANTHROPIC_API_KEY) {
     const y = await ask(
-      'Found ANTHROPIC_API_KEY in .env — register it with OneCLI? [Y/n] ',
+      'Your .env file already has ANTHROPIC_API_KEY. Copy it into secure storage now? [Y/n] ',
     );
     if (!y || y.toLowerCase() === 'y' || y.toLowerCase() === 'yes') {
       value = fromEnv.ANTHROPIC_API_KEY;
     }
   } else if (fromEnv.ANTHROPIC_AUTH_TOKEN) {
     const y = await ask(
-      'Found ANTHROPIC_AUTH_TOKEN in .env — register it with OneCLI? [Y/n] ',
+      'Your .env file has ANTHROPIC_AUTH_TOKEN. Copy it into secure storage now? [Y/n] ',
     );
     if (!y || y.toLowerCase() === 'y' || y.toLowerCase() === 'yes') {
       value = fromEnv.ANTHROPIC_AUTH_TOKEN;
@@ -396,11 +421,16 @@ async function main(): Promise<void> {
 
   if (!value) {
     console.log('');
+    console.log('You need a Claude API key (from Anthropic).');
+    console.log('');
+    console.log('  1) Open https://console.anthropic.com/settings/keys');
+    console.log('  2) Create or copy a key.');
     console.log(
-      'Anthropic API key from https://console.anthropic.com/settings/keys',
+      '  3) Click this window, paste the key, then press Enter (typing also works).',
     );
-    console.log('(Typed characters are hidden.)');
-    value = await askSecret('API key: ');
+    console.log('     Each character shows as * — nothing is printed in plain text.');
+    console.log('');
+    value = await askSecret('Paste or type your key here, then Enter: ');
   }
 
   if (!value) {
@@ -428,14 +458,14 @@ async function main(): Promise<void> {
     console.error(cr.stderr || cr.stdout || 'secrets create failed');
     process.exit(1);
   }
-  console.log('✓ Secret stored in OneCLI vault');
+  console.log('✓ API key saved securely on this computer.');
 
   if (
     value === fromEnv.ANTHROPIC_API_KEY ||
     value === fromEnv.ANTHROPIC_AUTH_TOKEN
   ) {
     const y = await ask(
-      'Remove the credential line(s) from .env now? (recommended) [Y/n] ',
+      'Remove the key from .env now that it is in secure storage? (recommended) [Y/n] ',
     );
     if (!y || y.toLowerCase() === 'y' || y.toLowerCase() === 'yes') {
       stripCredentialLinesFromEnv([
@@ -448,8 +478,8 @@ async function main(): Promise<void> {
   }
 
   console.log('');
-  console.log('Done. Start the app with npm start or npm run dev:live.');
-  console.log('Optional: open', origin, 'to manage secrets in the UI.');
+  console.log('Done. Continue the installer, or start the brain from your TVClaw folder when you are ready.');
+  console.log('To review saved keys later, open', origin, 'in a browser.');
   console.log('');
 }
 
