@@ -3,9 +3,42 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import readline from 'readline';
+import tty from 'tty';
 import { stdin as stdinStream, stdout as stdoutStream } from 'process';
 
 import { readEnvFile } from './env.js';
+
+type InteractiveStreams = {
+  stdin: NodeJS.ReadStream & {
+    isTTY: boolean;
+    setRawMode(mode: boolean): void;
+  };
+  stdout: NodeJS.WriteStream & { isTTY: boolean };
+};
+
+function tryControllingTerminal(): InteractiveStreams | null {
+  if (process.platform === 'win32') return null;
+  try {
+    const inFd = fs.openSync('/dev/tty', 'r');
+    const outFd = fs.openSync('/dev/tty', 'w');
+    return {
+      stdin: new tty.ReadStream(inFd),
+      stdout: new tty.WriteStream(outFd),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function interactiveStreams(): InteractiveStreams | null {
+  if (stdinStream.isTTY && stdoutStream.isTTY) {
+    return {
+      stdin: stdinStream as InteractiveStreams['stdin'],
+      stdout: stdoutStream as InteractiveStreams['stdout'],
+    };
+  }
+  return tryControllingTerminal();
+}
 
 const DEFAULT_ONECLI_ORIGIN = 'http://127.0.0.1:10254';
 
@@ -21,10 +54,10 @@ function stripBracketedPasteWrappers(s: string): string {
 }
 
 function ask(prompt: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const term = interactiveStreams();
+  const input = term?.stdin ?? stdinStream;
+  const output = term?.stdout ?? stdoutStream;
+  const rl = readline.createInterface({ input, output });
   return new Promise((resolve) => {
     rl.question(prompt, (a) => {
       rl.close();
@@ -34,26 +67,27 @@ function ask(prompt: string): Promise<string> {
 }
 
 function askSecret(prompt: string): Promise<string> {
-  return new Promise((resolve) => {
+  const term = interactiveStreams();
+  if (!term?.stdin.isTTY || !term.stdout.isTTY) {
     stdoutStream.write(`\n${prompt}`);
-    if (!stdinStream.isTTY || !stdoutStream.isTTY) {
-      console.log(
-        '(This stdin is not a TTY — the key will echo. Prefer running in a real terminal.)',
-      );
-      void ask('Paste API key, then Enter: ').then((a) => {
-        resolve(a.trim());
-      });
-      return;
-    }
+    console.log(
+      '(Could not open your terminal for hidden input; typed characters may show. Open Terminal.app or iTerm, cd into your Nanoclaw folder, and run: npm run auth:ai)',
+    );
+    return ask('Paste API key, then Enter: ');
+  }
+  const inStream = term.stdin;
+  const outStream = term.stdout;
+  return new Promise((resolve) => {
     const buf: string[] = [];
-    stdinStream.setRawMode(true);
-    stdinStream.resume();
+    outStream.write(`\n${prompt}`);
+    inStream.setRawMode(true);
+    inStream.resume();
     const cleanup = () => {
-      stdinStream.setRawMode(false);
-      stdinStream.removeListener('data', onData);
-      stdinStream.pause();
-      if (typeof stdinStream.unref === 'function') {
-        stdinStream.unref();
+      inStream.setRawMode(false);
+      inStream.removeListener('data', onData);
+      inStream.pause();
+      if (typeof inStream.unref === 'function') {
+        inStream.unref();
       }
     };
     const onData = (chunk: Buffer) => {
@@ -61,29 +95,29 @@ function askSecret(prompt: string): Promise<string> {
       for (const c of s) {
         if (c === '\n' || c === '\r' || c === '\u0004') {
           cleanup();
-          stdoutStream.write('\n');
+          outStream.write('\n');
           resolve(buf.join('').trim());
           return;
         }
         if (c === '\u0003') {
           cleanup();
-          stdoutStream.write('\n');
+          outStream.write('\n');
           process.exit(130);
         }
         if (c === '\u007f' || c === '\b') {
           if (buf.length) {
             buf.pop();
-            stdoutStream.write('\b \b');
+            outStream.write('\b \b');
           }
           continue;
         }
         if (c >= ' ' && c <= '~') {
           buf.push(c);
-          stdoutStream.write('*');
+          outStream.write('*');
         }
       }
     };
-    stdinStream.on('data', onData);
+    inStream.on('data', onData);
   });
 }
 
